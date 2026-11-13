@@ -1,0 +1,1951 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Recorder Subsystem — 2D Infinite Canvas Node-Link Graph</title>
+  ${fontsStyle ? `<style id="archify-fonts">${fontsStyle}</style>` : ''}
+  <style>
+    :root {
+      --bg-color: #060911;
+      --grid-fine: #0e1626;
+      --grid-major: #162238;
+      
+      --panel-bg: rgba(13, 20, 36, 0.92);
+      --panel-border: #233554;
+      --panel-border-bright: #38bdf8;
+      
+      --text-main: #f1f5f9;
+      --text-muted: #94a3b8;
+      --text-faint: #64748b;
+      
+      --cyan: #38bdf8;
+      --emerald: #34d399;
+      --amber: #fbbf24;
+      --rose: #f87171;
+      --violet: #a78bfa;
+      --indigo: #818cf8;
+      --blue: #60a5fa;
+      
+      --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background-color: var(--bg-color);
+      color: var(--text-main);
+      font-family: var(--font-sans);
+      user-select: none;
+    }
+
+    /* Fullscreen SVG Canvas */
+    #canvas-container {
+      width: 100vw;
+      height: 100vh;
+      position: absolute;
+      top: 0;
+      left: 0;
+      cursor: grab;
+      background-color: var(--bg-color);
+    }
+    #canvas-container.panning {
+      cursor: grabbing;
+    }
+    svg.infinite-graph {
+      width: 100%;
+      height: 100%;
+      display: block;
+      overflow: visible;
+    }
+
+    /* Floating HUD Top Bar */
+    .hud-topbar {
+      position: absolute;
+      top: 16px;
+      left: 20px;
+      z-index: 100;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+      pointer-events: none;
+    }
+    .hud-topbar > * {
+      pointer-events: auto;
+    }
+
+    .brand-pill {
+      background: var(--panel-bg);
+      border: 1px solid var(--panel-border);
+      backdrop-filter: blur(12px);
+      padding: 8px 16px;
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+    }
+    .brand-icon {
+      width: 30px;
+      height: 30px;
+      border-radius: 8px;
+      background: linear-gradient(135deg, #0284c7, #8b5cf6);
+      display: grid;
+      place-items: center;
+      color: #fff;
+      font-weight: 800;
+      font-size: 13px;
+      font-family: var(--font-mono);
+      box-shadow: 0 0 12px rgba(56, 189, 248, 0.4);
+    }
+    .brand-text h1 {
+      font-size: 14.5px;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .brand-badge {
+      font-size: 10px;
+      font-family: var(--font-mono);
+      padding: 2px 6px;
+      border-radius: 4px;
+      background: rgba(56, 189, 248, 0.15);
+      color: var(--cyan);
+      border: 1px solid rgba(56, 189, 248, 0.35);
+    }
+    .brand-text p {
+      font-size: 11px;
+      color: var(--text-muted);
+      font-family: var(--font-mono);
+    }
+
+    .hud-controls {
+      background: var(--panel-bg);
+      border: 1px solid var(--panel-border);
+      backdrop-filter: blur(12px);
+      padding: 6px 10px;
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+    }
+    .hud-btn {
+      background: rgba(30, 41, 59, 0.7);
+      border: 1px solid var(--panel-border);
+      color: var(--text-main);
+      padding: 6px 12px;
+      border-radius: 8px;
+      font-size: 12px;
+      font-weight: 600;
+      font-family: var(--font-sans);
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.15s ease;
+    }
+    .hud-btn:hover {
+      background: rgba(56, 189, 248, 0.15);
+      border-color: var(--cyan);
+      color: var(--cyan);
+      transform: translateY(-1px);
+    }
+    .hud-btn.primary {
+      background: rgba(56, 189, 248, 0.2);
+      border-color: var(--cyan);
+      color: var(--cyan);
+    }
+    .zoom-display {
+      font-family: var(--font-mono);
+      font-size: 12px;
+      color: var(--text-muted);
+      min-width: 48px;
+      text-align: center;
+    }
+
+    /* Floating Navigation Controls (Bottom-Right Mini-Map) */
+    .hud-bottomright {
+      position: absolute;
+      bottom: 20px;
+      right: 20px;
+      z-index: 100;
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 10px;
+      pointer-events: none;
+    }
+    .hud-bottomright > * { pointer-events: auto; }
+
+    .minimap-panel {
+      width: 240px;
+      height: 150px;
+      background: var(--panel-bg);
+      border: 1px solid var(--panel-border);
+      border-radius: 12px;
+      backdrop-filter: blur(12px);
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
+      overflow: hidden;
+      position: relative;
+      cursor: crosshair;
+    }
+    .minimap-title {
+      position: absolute;
+      top: 6px;
+      left: 10px;
+      font-size: 10px;
+      font-family: var(--font-mono);
+      color: var(--text-faint);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      pointer-events: none;
+    }
+    #minimap-canvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    /* Graph SVG Elements Styling */
+    .grid-line-fine { stroke: var(--grid-fine); stroke-width: 1; }
+    .grid-line-major { stroke: var(--grid-major); stroke-width: 1.5; }
+
+    /* Container Swimlanes / Subgraphs */
+    .subgraph-box {
+      fill: rgba(15, 23, 42, 0.65);
+      stroke: var(--panel-border);
+      stroke-width: 1.5;
+      rx: 16;
+      ry: 16;
+      transition: all 0.2s ease;
+    }
+    .subgraph-box.hovered {
+      stroke: var(--cyan);
+      fill: rgba(15, 23, 42, 0.8);
+    }
+    .subgraph-header-bg {
+      fill: rgba(30, 41, 59, 0.85);
+      rx: 14;
+      ry: 14;
+    }
+    .subgraph-title {
+      font-family: var(--font-sans);
+      font-size: 15px;
+      font-weight: 700;
+      fill: #ffffff;
+      letter-spacing: -0.01em;
+    }
+    .subgraph-badge {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-weight: 700;
+    }
+    .subgraph-toggle-btn {
+      cursor: pointer;
+    }
+    .subgraph-toggle-btn rect {
+      fill: rgba(56, 189, 248, 0.15);
+      stroke: var(--cyan);
+      stroke-width: 1;
+      rx: 6;
+      ry: 6;
+      transition: fill 0.15s ease;
+    }
+    .subgraph-toggle-btn:hover rect {
+      fill: var(--cyan);
+    }
+    .subgraph-toggle-btn text {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-weight: 700;
+      fill: var(--cyan);
+      text-anchor: middle;
+      dominant-baseline: central;
+      pointer-events: none;
+    }
+    .subgraph-toggle-btn:hover text {
+      fill: #060911;
+    }
+
+    /* Node Groups */
+    .graph-node {
+      cursor: pointer;
+      transition: filter 0.15s ease, transform 0.15s ease;
+    }
+    .graph-node:hover {
+      filter: drop-shadow(0 0 10px rgba(56, 189, 248, 0.5));
+    }
+    .graph-node.selected rect,
+    .graph-node.selected polygon {
+      stroke: #38bdf8 !important;
+      stroke-width: 2.5 !important;
+      filter: drop-shadow(0 0 14px rgba(56, 189, 248, 0.8));
+    }
+
+    /* Action Rectangle Nodes */
+    .node-rect {
+      fill: #111827;
+      stroke: #374151;
+      stroke-width: 1.5;
+      rx: 10;
+      ry: 10;
+    }
+    .node-header-action { fill: #1f2937; rx: 8; ry: 8; }
+    .node-text-title {
+      font-family: var(--font-sans);
+      font-size: 12.5px;
+      font-weight: 700;
+      fill: #f8fafc;
+    }
+    .node-text-code {
+      font-family: var(--font-mono);
+      font-size: 10.5px;
+      fill: #94a3b8;
+    }
+    .node-text-src {
+      font-family: var(--font-mono);
+      font-size: 9.5px;
+      fill: #64748b;
+    }
+
+    /* Decision Diamond Nodes */
+    .diamond-polygon {
+      fill: #1a1625;
+      stroke: var(--amber);
+      stroke-width: 2;
+      transition: all 0.15s ease;
+    }
+    .diamond-text {
+      font-family: var(--font-sans);
+      font-size: 11.5px;
+      font-weight: 700;
+      fill: #fbbf24;
+      text-anchor: middle;
+      dominant-baseline: central;
+    }
+    .diamond-subtext {
+      font-family: var(--font-mono);
+      font-size: 9.5px;
+      fill: #cbd5e1;
+      text-anchor: middle;
+      dominant-baseline: central;
+    }
+
+    /* Loop Header Nodes */
+    .loop-rect {
+      fill: #1e1b4b;
+      stroke: var(--violet);
+      stroke-width: 2;
+      rx: 24;
+      ry: 24;
+    }
+    .loop-text {
+      font-family: var(--font-mono);
+      font-size: 12px;
+      font-weight: 700;
+      fill: #c4b5fd;
+      text-anchor: middle;
+      dominant-baseline: central;
+    }
+
+    /* Data State Nodes (Hexagons/Badges along conduits) */
+    .data-state-node polygon {
+      fill: #0c1c2e;
+      stroke: var(--cyan);
+      stroke-width: 2;
+      filter: drop-shadow(0 0 10px rgba(56, 189, 248, 0.4));
+      transition: all 0.15s ease;
+    }
+    .data-state-node:hover polygon {
+      fill: #112d4a;
+      stroke: #7dd3fc;
+      filter: drop-shadow(0 0 16px rgba(56, 189, 248, 0.8));
+    }
+    .data-state-title {
+      font-family: var(--font-sans);
+      font-size: 12px;
+      font-weight: 800;
+      fill: #38bdf8;
+      text-anchor: middle;
+    }
+    .data-state-desc {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      fill: #e2e8f0;
+      text-anchor: middle;
+    }
+
+    /* Directed SVG Arrows / Connectors */
+    .arrow-path {
+      fill: none;
+      stroke: #475569;
+      stroke-width: 2;
+      stroke-linejoin: round;
+      stroke-linecap: round;
+      transition: stroke 0.15s ease, stroke-width 0.15s ease;
+    }
+    .arrow-path:hover {
+      stroke: var(--cyan);
+      stroke-width: 3;
+    }
+    .arrow-path.flow-main {
+      stroke: #38bdf8;
+      stroke-width: 2.5;
+    }
+    .arrow-path.branch-yes {
+      stroke: #34d399;
+      stroke-width: 2.2;
+    }
+    .arrow-path.branch-no {
+      stroke: #f87171;
+      stroke-width: 2.2;
+    }
+    .arrow-path.loop-back {
+      stroke: #a78bfa;
+      stroke-width: 2;
+      stroke-dasharray: 6 5;
+    }
+
+    .branch-pill-yes text {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      font-weight: 800;
+      fill: #10b981;
+    }
+    .branch-pill-no text {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      font-weight: 800;
+      fill: #ef4444;
+    }
+
+    /* Side Detail Drawer */
+    .drawer-scrim {
+      position: fixed;
+      inset: 0;
+      background: rgba(3, 7, 18, 0.65);
+      backdrop-filter: blur(4px);
+      z-index: 200;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.22s ease;
+    }
+    .drawer-scrim.open {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .detail-drawer {
+      position: fixed;
+      top: 0;
+      right: 0;
+      width: min(520px, 92vw);
+      height: 100vh;
+      background: var(--panel-bg);
+      border-left: 1px solid var(--panel-border);
+      box-shadow: -12px 0 40px rgba(0, 0, 0, 0.7);
+      backdrop-filter: blur(18px);
+      z-index: 250;
+      transform: translateX(100%);
+      transition: transform 0.26s cubic-bezier(0.16, 1, 0.3, 1);
+      display: flex;
+      flex-direction: column;
+    }
+    .detail-drawer.open {
+      transform: translateX(0);
+    }
+
+    .drawer-header {
+      padding: 18px 22px;
+      border-bottom: 1px solid var(--panel-border);
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+      background: rgba(22, 34, 56, 0.6);
+    }
+    .drawer-tag {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-weight: 700;
+      padding: 2px 8px;
+      border-radius: 5px;
+      background: rgba(56, 189, 248, 0.15);
+      color: var(--cyan);
+      border: 1px solid rgba(56, 189, 248, 0.35);
+      display: inline-block;
+      margin-bottom: 6px;
+    }
+    .drawer-title {
+      font-size: 17px;
+      font-weight: 700;
+      line-height: 1.3;
+    }
+    .drawer-close {
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
+      border: 1px solid var(--panel-border);
+      background: rgba(30, 41, 59, 0.6);
+      color: var(--text-main);
+      font-size: 18px;
+      cursor: pointer;
+      display: grid;
+      place-items: center;
+      transition: all 0.15s ease;
+    }
+    .drawer-close:hover {
+      border-color: var(--cyan);
+      color: var(--cyan);
+    }
+
+    .drawer-body {
+      padding: 20px 22px 50px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+    }
+    .drawer-sec h6 {
+      font-size: 11px;
+      font-family: var(--font-mono);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-muted);
+      margin-bottom: 6px;
+    }
+    .drawer-sec p {
+      font-size: 13.5px;
+      line-height: 1.6;
+      color: var(--text-main);
+    }
+    .code-snippet {
+      background: #040711;
+      border: 1px solid var(--panel-border);
+      border-radius: 8px;
+      padding: 12px 14px;
+      font-family: var(--font-mono);
+      font-size: 11.5px;
+      line-height: 1.6;
+      overflow-x: auto;
+      white-space: pre;
+      color: #e2e8f0;
+    }
+    .source-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-family: var(--font-mono);
+      font-size: 11.5px;
+      padding: 4px 10px;
+      border-radius: 6px;
+      background: rgba(52, 211, 153, 0.12);
+      color: var(--emerald);
+      border: 1px solid rgba(52, 211, 153, 0.35);
+      margin-right: 6px;
+      margin-bottom: 6px;
+    }
+  </style>
+</head>
+<body>
+  <!-- Canvas Viewport -->
+  <div id="canvas-container">
+    <svg id="svgCanvas" class="infinite-graph">
+      <defs>
+        <!-- Blueprint Grid Pattern -->
+        <pattern id="grid-fine" width="40" height="40" patternUnits="userSpaceOnUse">
+          <path d="M 40 0 L 0 0 0 40" fill="none" class="grid-line-fine" />
+        </pattern>
+        <pattern id="grid-major" width="200" height="200" patternUnits="userSpaceOnUse">
+          <rect width="200" height="200" fill="url(#grid-fine)" />
+          <path d="M 200 0 L 0 0 0 200" fill="none" class="grid-line-major" />
+        </pattern>
+
+        <!-- Directed Arrowheads -->
+        <marker id="arrow-default" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M 0 1 L 10 5 L 0 9 z" fill="#64748b" />
+        </marker>
+        <marker id="arrow-main" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+          <path d="M 0 1 L 10 5 L 0 9 z" fill="#38bdf8" />
+        </marker>
+        <marker id="arrow-yes" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+          <path d="M 0 1 L 10 5 L 0 9 z" fill="#34d399" />
+        </marker>
+        <marker id="arrow-no" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+          <path d="M 0 1 L 10 5 L 0 9 z" fill="#f87171" />
+        </marker>
+        <marker id="arrow-loop" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+          <path d="M 0 1 L 10 5 L 0 9 z" fill="#a78bfa" />
+        </marker>
+      </defs>
+
+      <!-- Infinite Grid Background -->
+      <rect id="grid-canvas" x="-5000" y="-5000" width="15000" height="15000" fill="url(#grid-major)" />
+
+      <!-- Transformable Graph Layer -->
+      <g id="world" transform="translate(60, 40) scale(0.65)">
+        <!-- Layer for Directed Inter-Node Arrows -->
+        <g id="edges-layer"></g>
+
+        <!-- Layer for Subgraph Container Bounding Boxes -->
+        <g id="containers-layer"></g>
+
+        <!-- Layer for Micro-Nodes & Geometric Shapes -->
+        <g id="nodes-layer"></g>
+
+        <!-- Layer for Data Mutation Nodes -->
+        <g id="data-states-layer"></g>
+      </g>
+    </svg>
+  </div>
+
+  <!-- HUD Top Controls -->
+  <div class="hud-topbar">
+    <div class="brand-pill">
+      <div class="brand-icon">2D</div>
+      <div class="brand-text">
+        <h1>
+          <span>Recorder Subsystem Infinite Graph</span>
+          <span class="brand-badge">Node-Link Blueprint</span>
+        </h1>
+        <p>Interactive 2D Canvas • Expandable Compound Subgraphs • Pan &amp; Zoom</p>
+      </div>
+    </div>
+
+    <div class="hud-controls">
+      <button class="hud-btn" id="btnZoomIn" title="Zoom In (+)"><span>＋</span> Zoom In</button>
+      <button class="hud-btn" id="btnZoomOut" title="Zoom Out (-)"><span>－</span> Zoom Out</button>
+      <div class="zoom-display" id="zoomLevel">65%</div>
+      <button class="hud-btn primary" id="btnFit" title="Fit Entire Graph to Screen"><span>⛶</span> Fit to Screen</button>
+      <button class="hud-btn" id="btnExpandAll" title="Expand All 5 Subgraphs"><span>⊞</span> Expand All</button>
+      <button class="hud-btn" id="btnCollapseAll" title="Collapse to 5 Macro Boxes"><span>⊟</span> Collapse All</button>
+    </div>
+  </div>
+
+  <!-- HUD Bottom-Right Mini-Map -->
+  <div class="hud-bottomright">
+    <div class="minimap-panel" id="minimapContainer" title="Click or drag to pan canvas">
+      <div class="minimap-title">Mini-Map</div>
+      <canvas id="minimap-canvas" width="240" height="150"></canvas>
+    </div>
+  </div>
+
+  <!-- Side Detail Drawer -->
+  <div class="drawer-scrim" id="drawerScrim" onclick="closeDrawer()"></div>
+  <aside class="detail-drawer" id="detailDrawer">
+    <div class="drawer-header">
+      <div>
+        <span class="drawer-tag" id="drawerTag">NODE DETAIL</span>
+        <h3 class="drawer-title" id="drawerTitle">Node Title</h3>
+      </div>
+      <button class="drawer-close" onclick="closeDrawer()">&times;</button>
+    </div>
+    <div class="drawer-body" id="drawerBody">
+      <!-- Content populated dynamically -->
+    </div>
+  </aside>
+
+  <!-- Canvas Engine & Graph Definition Script -->
+  <script>
+    // =========================================================================
+    // GRAPH SPECIFICATION & METADATA DATABASE
+    // =========================================================================
+    const GRAPH_DATA = {
+      stages: [
+        {
+          id: 'stage1',
+          num: 1,
+          title: 'Stage 1: Lifecycle & Thread Orchestration',
+          subtitle: 'start() / stop() / wait()',
+          badgeColor: '#38bdf8',
+          thread: 'Main Thread',
+          expanded: true,
+          bounds: { x: 100, y: 100, w: 900, h: 580 },
+          collapsedBounds: { x: 100, y: 100, w: 340, h: 140 },
+          summary: 'Guards start() with atomic exchange, creates session directories, launches worker threads, and coordinates ordered zero-loss join shutdown.'
+        },
+        {
+          id: 'stage2',
+          num: 2,
+          title: 'Stage 2: ZMQ Receiver Loop',
+          subtitle: 'receiverLoop()',
+          badgeColor: '#34d399',
+          thread: 'Receiver Thread',
+          expanded: true,
+          bounds: { x: 100, y: 780, w: 900, h: 1240 },
+          collapsedBounds: { x: 100, y: 780, w: 340, h: 140 },
+          summary: 'Subscribes to ZMQ topics with 200ms recv timeout; captures UTC time; verifies SOP (0x0D0D) and EOP (0x0A0A); enqueues TelemetryMessage.'
+        },
+        {
+          id: 'stage3',
+          num: 3,
+          title: 'Stage 3: Thread-Safe Memory Buffer',
+          subtitle: 'BoundedByteQueue (push / drain)',
+          badgeColor: '#fbbf24',
+          thread: 'Producer / Consumer',
+          expanded: true,
+          bounds: { x: 1140, y: 780, w: 900, h: 1240 },
+          collapsedBounds: { x: 1140, y: 780, w: 340, h: 140 },
+          summary: 'Guards memory with 256 MB hard cap; drops without blocking receiver; transfers message batches in O(1) via std::swap under brief lock.'
+        },
+        {
+          id: 'stage4',
+          num: 4,
+          title: 'Stage 4: Batch Consumer & 300s Segment Router',
+          subtitle: 'writerLoop()',
+          badgeColor: '#a78bfa',
+          thread: 'Writer Thread',
+          expanded: true,
+          bounds: { x: 2180, y: 780, w: 940, h: 1240 },
+          collapsedBounds: { x: 2180, y: 780, w: 340, h: 140 },
+          summary: 'Drains batches every 50ms; calculates integer segment index seg_idx; executes multi-topic rollover; routes packets to per-topic TopicWriter.'
+        },
+        {
+          id: 'stage5',
+          num: 5,
+          title: 'Stage 5: Lazy File & Binary Serializer',
+          subtitle: 'TopicWriter & EndianCodec',
+          badgeColor: '#f87171',
+          thread: 'Libc Buffered I/O',
+          expanded: true,
+          bounds: { x: 3260, y: 780, w: 920, h: 1240 },
+          collapsedBounds: { x: 3260, y: 780, w: 340, h: 140 },
+          summary: 'Lazily creates .dat files only when first packet arrives (0 empty files); serializes 10B unpadded header; writes to 128KB _IOFBF buffer.'
+        }
+      ],
+
+      // External Endpoints
+      endpoints: [
+        { id: 'ep_zmq', label: 'ZMQ Publisher Source', sub: 'tcp://192.168.5.21:30003', x: 100, y: 700, w: 240, h: 60, type: 'endpoint' },
+        { id: 'ep_disk', label: 'Binary Disk Storage (.dat)', sub: 'zdata/<topic>/*.dat', x: 4260, y: 1540, w: 250, h: 70, type: 'endpoint' }
+      ],
+
+      // Data Mutation Nodes on Inter-Stage Conduits
+      dataStates: [
+        {
+          id: 'DS1',
+          title: 'DATA STATE 1: Wire Input',
+          desc: '2 ZMQ Frames (5B topic + 16B RDP)',
+          x: 480, y: 720, w: 240, h: 48,
+          detail: {
+            title: 'Data State 1: Wire Input (ZeroMQ Multipart Protocol)',
+            tag: 'NETWORK FRAME',
+            source: 'Wire Protocol tcp://192.168.5.21:30003',
+            explain: 'ZeroMQ delivers a 2-frame multipart message over TCP. Frame 1 contains the topic string, and Frame 2 contains the binary RDP telemetry packet.',
+            code: `Frame 1: [76 69 64 65 6F] ("video", 5 bytes)
+Frame 2: [0D 0D | 01 00 | 01 | 01 | 04 00 | AA BB CC DD | 34 12 | 0A 0A] (16 bytes)
+  - SOP: 0x0D0D (2B)
+  - SEQ: 0x0001 (2B)
+  - TYPE: 0x01, SUB: 0x01 (2B)
+  - LEN: 4 bytes (2B)
+  - DATA: AA BB CC DD (4B)
+  - CRC: 34 12 (2B)
+  - EOP: 0x0A0A (2B)`
+          }
+        },
+        {
+          id: 'DS2',
+          title: 'DATA STATE 2: Process RAM Struct',
+          desc: 'TelemetryMessage (53 Bytes Heap)',
+          x: 1030, y: 1680, w: 230, h: 48,
+          detail: {
+            title: 'Data State 2: In-Memory C++ Struct (TelemetryMessage)',
+            tag: 'RAM OBJECT',
+            source: 'src/common/Types.h:15-25',
+            explain: 'receiverLoop validates markers and packs the payload into a TelemetryMessage struct stamped with microsecond UTC clock.',
+            code: `struct TelemetryMessage {
+    std::string topic = "video"; // 5 bytes
+    uint64_t timestamp_us = 1762756560123456; // 8 bytes UTC
+    std::vector<uint8_t> payload = { 0x0D, 0x0D, ..., 0x0A, 0x0A }; // 16 bytes
+    
+    // Dynamic memory footprint:
+    size_t byteSize() const {
+        return topic.size() + payload.size() + sizeof(TelemetryMessage);
+        // 5 + 16 + 32 = 53 bytes
+    }
+};`
+          }
+        },
+        {
+          id: 'DS3',
+          title: 'DATA STATE 3: Batch Deque Swap',
+          desc: 'std::swap O(1) (0 Bytes Copied)',
+          x: 2060, y: 1680, w: 230, h: 48,
+          detail: {
+            title: 'Data State 3: Batch Deque Transfer via std::swap',
+            tag: 'ZERO-COPY CONCURRENCY',
+            source: 'src/recorder/BoundedByteQueue.h:57-61',
+            explain: 'The consumer drains all queued messages in a single O(1) container swap under brief mutex lock, exchanging internal buffer pointers with zero data copying.',
+            code: `// Inside BoundedByteQueue::drain():
+std::unique_lock<std::mutex> lock(mutex_);
+if (!queue_.empty()) {
+    std::swap(queue_, dest); // O(1) pointer swap (~15 ns)
+    current_bytes_ = 0;
+    return true; // 0 elements allocated or copied
+}`
+          }
+        },
+        {
+          id: 'DS4',
+          title: 'DATA STATE 4: Segment Routing',
+          desc: 'zdata/video/video_...dat',
+          x: 3130, y: 1540, w: 230, h: 48,
+          detail: {
+            title: 'Data State 4: Topic Routing & Segment Filename',
+            tag: 'FILESYSTEM DISPATCH',
+            source: 'src/recorder/RecorderEngine.cpp:150-166',
+            explain: 'writerLoop divides timestamp by 300,000,000 us to determine segment boundary, formats the UTC timestamp, and strips topic into target file path.',
+            code: `uint64_t seg_idx = (ts - session_start_us_) / 300000000ULL;
+uint64_t seg_start_ts = session_start_us_ + seg_idx * 300000000ULL;
+// Topic "video" becomes directory and prefix:
+std::string filepath = "zdata/video/video_20261110_063600.dat";`
+          }
+        },
+        {
+          id: 'DS5',
+          title: 'DATA STATE 5: Contiguous Binary',
+          desc: '26B File Record (Zero Padding)',
+          x: 4210, y: 1420, w: 230, h: 48,
+          detail: {
+            title: 'Data State 5: Contiguous 26-Byte Disk Binary Record',
+            tag: 'FILE STORAGE LAYOUT',
+            source: 'src/recorder/TopicWriter.cpp:60-66, src/common/EndianCodec.h:13-21',
+            explain: 'Packs exact 10-byte unpadded header followed by the 16-byte raw RDP frame into 128KB _IOFBF buffer, written to disk as 26 contiguous bytes.',
+            code: `[0..7]   Timestamp: 40 76 97 BE 37 43 06 00 (u64 LE, 8 bytes)
+[8..9]   Data Length: 10 00 (u16 LE, 16 bytes)
+[10..25] Raw Payload: 0D 0D 01 00 01 01 04 00 AA BB CC DD 34 12 0A 0A (16 bytes)
+Total Record Length on Disk: 10 + 16 = 26 bytes exact (Zero struct padding)`
+          }
+        }
+      ],
+
+      // Micro Nodes
+      nodes: [
+        // --- STAGE 1 NODES ---
+        { id: 'S1_START', stage: 'stage1', type: 'action', title: 'start() Entry', sub: 'bool RecorderEngine::start()', relX: 40, relY: 60, w: 200, h: 60, src: 'RecorderEngine.cpp:15' },
+        { id: 'S1_D_RUN', stage: 'stage1', type: 'diamond', title: 'running_.exchange(true)?', sub: 'Already Running?', relX: 300, relY: 55, w: 120, h: 70, src: 'RecorderEngine.cpp:16' },
+        { id: 'S1_RET_ERR', stage: 'stage1', type: 'action', title: 'return false', sub: 'Prevent Duplicate Start', relX: 300, relY: 170, w: 170, h: 50, src: 'RecorderEngine.cpp:18' },
+        { id: 'S1_TS', stage: 'stage1', type: 'action', title: 'Session Timestamp', sub: 'session_start_us_ = UTC clock', relX: 480, relY: 60, w: 220, h: 60, src: 'RecorderEngine.cpp:26' },
+        { id: 'S1_DIR', stage: 'stage1', type: 'action', title: 'Create Directories', sub: 'QDir().mkpath(zdata_dir_)', relX: 730, relY: 60, w: 200, h: 60, src: 'RecorderEngine.cpp:29' },
+        { id: 'S1_SPAWN_W', stage: 'stage1', type: 'action', title: 'Spawn Writer Thread', sub: 'thread(&writerLoop, this)', relX: 480, relY: 170, w: 220, h: 60, src: 'RecorderEngine.cpp:43' },
+        { id: 'S1_SPAWN_R', stage: 'stage1', type: 'action', title: 'Spawn Receiver Thread', sub: 'thread(&receiverLoop, this)', relX: 730, relY: 170, w: 220, h: 60, src: 'RecorderEngine.cpp:44' },
+        { id: 'S1_STOP', stage: 'stage1', type: 'action', title: 'stop() Trigger', sub: 'stop_requested_ = true; queue_->requestStop()', relX: 40, relY: 340, w: 260, h: 64, src: 'RecorderEngine.cpp:49-55' },
+        { id: 'S1_WAIT', stage: 'stage1', type: 'action', title: 'wait() Entry', sub: 'Coordinate Shutdown', relX: 340, relY: 340, w: 180, h: 60, src: 'RecorderEngine.cpp:57' },
+        { id: 'S1_JOIN_R', stage: 'stage1', type: 'action', title: 'Join Receiver First', sub: 'receiver_thread_.join()', relX: 560, relY: 340, w: 200, h: 60, src: 'RecorderEngine.cpp:58-60' },
+        { id: 'S1_JOIN_W', stage: 'stage1', type: 'action', title: 'Join Writer Second', sub: 'writer_thread_.join(); running_ = false', relX: 560, relY: 440, w: 220, h: 64, src: 'RecorderEngine.cpp:61-64' },
+
+        // --- STAGE 2 NODES ---
+        { id: 'S2_INIT', stage: 'stage2', type: 'action', title: 'ZMQ SUB Socket Setup', sub: 'ctx{1}, rcvtimeo=200ms, connect, subscribe', relX: 40, relY: 80, w: 270, h: 64, src: 'RecorderEngine.cpp:68-78' },
+        { id: 'S2_LOOP', stage: 'stage2', type: 'loop', title: 'while (!stop_requested_)', sub: 'Main Receiver Loop', relX: 360, relY: 80, w: 240, h: 60, src: 'RecorderEngine.cpp:87' },
+        { id: 'S2_D_DUR', stage: 'stage2', type: 'diamond', title: 'duration_sec exceeded?', sub: 'Check Elapsed', relX: 660, relY: 75, w: 120, h: 70, src: 'RecorderEngine.cpp:88-95' },
+        { id: 'S2_EXIT', stage: 'stage2', type: 'action', title: 'Socket Close & Exit', sub: 'sub_sock.close(); ctx.close()', relX: 660, relY: 190, w: 200, h: 60, src: 'RecorderEngine.cpp:135-138' },
+        { id: 'S2_RECV_T', stage: 'stage2', type: 'action', title: 'sub_sock.recv(topic_msg)', sub: 'Frame 1: Topic String', relX: 360, relY: 200, w: 240, h: 60, src: 'RecorderEngine.cpp:98-99' },
+        { id: 'S2_D_TO', stage: 'stage2', type: 'diamond', title: '!res (200ms Timeout)?', sub: 'Idle Check', relX: 360, relY: 310, w: 120, h: 70, src: 'RecorderEngine.cpp:100-102' },
+        { id: 'S2_TS', stage: 'stage2', type: 'action', title: 'Capture UTC Clock', sub: 'recv_ts = currentUtcMicroseconds()', relX: 360, relY: 440, w: 240, h: 60, src: 'RecorderEngine.cpp:104' },
+        { id: 'S2_D_MORE', stage: 'stage2', type: 'diamond', title: 'topic_msg.more()?', sub: 'Multipart Check', relX: 360, relY: 550, w: 120, h: 70, src: 'RecorderEngine.cpp:106' },
+        { id: 'S2_INV_1', stage: 'stage2', type: 'action', title: 'total_invalid_++', sub: 'Single frame drop', relX: 120, relY: 555, w: 160, h: 54, src: 'RecorderEngine.cpp:107' },
+        { id: 'S2_RECV_P', stage: 'stage2', type: 'action', title: 'sub_sock.recv(payload_msg)', sub: 'Frame 2: RDP Binary Frame', relX: 360, relY: 680, w: 240, h: 60, src: 'RecorderEngine.cpp:111-116' },
+        { id: 'S2_D_VERIFY', stage: 'stage2', type: 'diamond', title: 'verifyFrameMarkers()?', sub: 'len>=12, SOP, EOP', relX: 360, relY: 790, w: 120, h: 70, src: 'RecorderEngine.cpp:121' },
+        { id: 'S2_INV_2', stage: 'stage2', type: 'action', title: 'total_invalid_++', sub: 'Marker mismatch drop', relX: 120, relY: 795, w: 160, h: 54, src: 'RecorderEngine.cpp:122' },
+        { id: 'S2_PACK', stage: 'stage2', type: 'action', title: 'Construct TelemetryMessage', sub: 'topic, recv_ts, payload vector', relX: 360, relY: 920, w: 240, h: 60, src: 'RecorderEngine.cpp:126-129' },
+        { id: 'S2_PUSH', stage: 'stage2', type: 'action', title: 'queue_->push(std::move(msg))', sub: 'Enqueue & total_received_++', relX: 360, relY: 1040, w: 260, h: 64, src: 'RecorderEngine.cpp:131-132' },
+
+        // --- STAGE 3 NODES ---
+        { id: 'S3_PUSH_ENTRY', stage: 'stage3', type: 'action', title: 'push(msg) Entry', sub: 'Producer Entrance', relX: 40, relY: 80, w: 190, h: 60, src: 'BoundedByteQueue.h:21' },
+        { id: 'S3_SZ', stage: 'stage3', type: 'action', title: 'msg.byteSize()', sub: 'topic + payload + 32B struct', relX: 270, relY: 80, w: 200, h: 60, src: 'BoundedByteQueue.h:22' },
+        { id: 'S3_LOCK_P', stage: 'stage3', type: 'action', title: 'lock_guard<mutex>', sub: 'Acquire Producer Lock', relX: 510, relY: 80, w: 200, h: 60, src: 'BoundedByteQueue.h:24' },
+        { id: 'S3_D_STOP', stage: 'stage3', type: 'diamond', title: 'stop_requested_?', sub: 'Check Stop', relX: 740, relY: 75, w: 110, h: 70, src: 'BoundedByteQueue.h:25' },
+        { id: 'S3_RET_STOP', stage: 'stage3', type: 'action', title: 'return false', sub: 'Abort Push on Stop', relX: 730, relY: 190, w: 140, h: 50, src: 'BoundedByteQueue.h:26' },
+        { id: 'S3_D_CAP', stage: 'stage3', type: 'diamond', title: 'cur_bytes + sz > 256MB?', sub: 'Queue Capacity Guard', relX: 510, relY: 220, w: 120, h: 70, src: 'BoundedByteQueue.h:29' },
+        { id: 'S3_DROP', stage: 'stage3', type: 'action', title: 'Non-Blocking Drop', sub: 'dropped_messages_++, return false', relX: 230, relY: 225, w: 220, h: 60, src: 'BoundedByteQueue.h:30-33' },
+        { id: 'S3_ENQUEUE', stage: 'stage3', type: 'action', title: 'queue_.push_back(move(msg))', sub: 'current_bytes_ += msg_size', relX: 510, relY: 370, w: 240, h: 64, src: 'BoundedByteQueue.h:35-37' },
+        { id: 'S3_NOTIFY', stage: 'stage3', type: 'action', title: 'cv_.notify_one()', sub: 'Unlock & Signal Consumer', relX: 510, relY: 480, w: 200, h: 60, src: 'BoundedByteQueue.h:39-40' },
+        { id: 'S3_DRAIN_ENTRY', stage: 'stage3', type: 'action', title: 'drain(batch, 50ms) Entry', sub: 'Consumer Entrance', relX: 40, relY: 670, w: 200, h: 60, src: 'BoundedByteQueue.h:46-48' },
+        { id: 'S3_LOCK_C', stage: 'stage3', type: 'action', title: 'unique_lock<mutex>', sub: 'Acquire Consumer Lock', relX: 280, relY: 670, w: 200, h: 60, src: 'BoundedByteQueue.h:49' },
+        { id: 'S3_WAIT', stage: 'stage3', type: 'action', title: 'cv_.wait_for(50ms, pred)', sub: 'predicate: !empty || stop', relX: 520, relY: 670, w: 240, h: 64, src: 'BoundedByteQueue.h:51-54' },
+        { id: 'S3_D_EMPTY', stage: 'stage3', type: 'diamond', title: '!queue_.empty()?', sub: 'Has Packets?', relX: 520, relY: 790, w: 120, h: 70, src: 'BoundedByteQueue.h:57' },
+        { id: 'S3_RET_EMPTY', stage: 'stage3', type: 'action', title: 'return false', sub: 'Timeout or Empty', relX: 280, relY: 795, w: 160, h: 54, src: 'BoundedByteQueue.h:62' },
+        { id: 'S3_SWAP', stage: 'stage3', type: 'action', title: 'std::swap(queue_, dest)', sub: 'O(1) Batch Pointer Swap, bytes = 0', relX: 520, relY: 920, w: 260, h: 64, src: 'BoundedByteQueue.h:58-61' },
+
+        // --- STAGE 4 NODES ---
+        { id: 'S4_LOOP', stage: 'stage4', type: 'loop', title: 'while (true)', sub: 'Main Writer Loop', relX: 40, relY: 80, w: 200, h: 60, src: 'RecorderEngine.cpp:146' },
+        { id: 'S4_DRAIN', stage: 'stage4', type: 'action', title: 'queue_->drain(batch, 50ms)', sub: 'Pull message batch', relX: 280, relY: 80, w: 240, h: 60, src: 'RecorderEngine.cpp:147' },
+        { id: 'S4_D_DRAINED', stage: 'stage4', type: 'diamond', title: 'drained == true?', sub: 'Batch Available?', relX: 560, relY: 75, w: 120, h: 70, src: 'RecorderEngine.cpp:148' },
+        { id: 'S4_FOR_MSG', stage: 'stage4', type: 'loop', title: 'for (msg : batch)', sub: 'Iterate Local Batch', relX: 560, relY: 220, w: 220, h: 60, src: 'RecorderEngine.cpp:149' },
+        { id: 'S4_SEG_CALC', stage: 'stage4', type: 'action', title: 'Calculate seg_idx & ts', sub: '(ts - start) / 300s', relX: 560, relY: 340, w: 240, h: 60, src: 'RecorderEngine.cpp:150-153' },
+        { id: 'S4_D_ROLL', stage: 'stage4', type: 'diamond', title: 'seg_idx != current_seg?', sub: '300s Rollover Trigger', relX: 560, relY: 460, w: 120, h: 70, src: 'RecorderEngine.cpp:155' },
+        { id: 'S4_ROLL_ALL', stage: 'stage4', type: 'action', title: 'writer->rollSegment()', sub: 'Roll all active topic writers', relX: 740, relY: 465, w: 220, h: 60, src: 'RecorderEngine.cpp:156-160' },
+        { id: 'S4_D_TOPIC', stage: 'stage4', type: 'diamond', title: 'writers_.find(topic) == end?', sub: 'Topic Seen Before?', relX: 560, relY: 600, w: 120, h: 70, src: 'RecorderEngine.cpp:162' },
+        { id: 'S4_MAKE_WRITER', stage: 'stage4', type: 'action', title: 'Lazy TopicWriter Creation', sub: 'make_unique<TopicWriter>(...)', relX: 740, relY: 605, w: 230, h: 60, src: 'RecorderEngine.cpp:164-166' },
+        { id: 'S4_DISPATCH', stage: 'stage4', type: 'action', title: 'writer->writeMessage()', sub: 'Dispatch msg to TopicWriter', relX: 560, relY: 750, w: 240, h: 64, src: 'RecorderEngine.cpp:168' },
+        { id: 'S4_D_EXIT', stage: 'stage4', type: 'diamond', title: 'stop && !drained && bytes==0?', sub: 'Zero-Loss Shutdown Check', relX: 280, relY: 220, w: 120, h: 70, src: 'RecorderEngine.cpp:173' },
+        { id: 'S4_CLOSE', stage: 'stage4', type: 'action', title: 'Close All Writers & Exit', sub: 'for (w : writers_) w->close()', relX: 40, relY: 225, w: 200, h: 60, src: 'RecorderEngine.cpp:178-183' },
+
+        // --- STAGE 5 NODES ---
+        { id: 'S5_WM_ENTRY', stage: 'stage5', type: 'action', title: 'writeMessage() Entry', sub: 'const TelemetryMessage& msg', relX: 40, relY: 80, w: 220, h: 60, src: 'TopicWriter.cpp:50' },
+        { id: 'S5_ENSURE', stage: 'stage5', type: 'action', title: 'ensureFileOpen() Call', sub: 'Verify or lazily open file', relX: 300, relY: 80, w: 200, h: 60, src: 'TopicWriter.cpp:51' },
+        { id: 'S5_D_FILE', stage: 'stage5', type: 'diamond', title: 'file_ != nullptr?', sub: 'Already Opened?', relX: 550, relY: 75, w: 120, h: 70, src: 'TopicWriter.cpp:24' },
+        { id: 'S5_LAZY_CREATE', stage: 'stage5', type: 'action', title: 'Lazy File & 128KB Buffer Open', sub: 'QDir().mkpath, fopen(wb), setvbuf(_IOFBF)', relX: 720, relY: 80, w: 260, h: 64, src: 'TopicWriter.cpp:28-47' },
+        { id: 'S5_D_SIZE', stage: 'stage5', type: 'diamond', title: 'payload.size() > 65535?', sub: 'UINT16_MAX Overflow Check', relX: 550, relY: 220, w: 120, h: 70, src: 'TopicWriter.cpp:55' },
+        { id: 'S5_ERR_SIZE', stage: 'stage5', type: 'action', title: 'Error Log & Return False', sub: 'Payload exceeds uint16 max', relX: 720, relY: 225, w: 220, h: 54, src: 'TopicWriter.cpp:56-57' },
+        { id: 'S5_SER_HDR', stage: 'stage5', type: 'action', title: 'serializeHeader(hdr[10])', sub: 'Zero Struct Padding (QtEndian)', relX: 550, relY: 360, w: 240, h: 64, src: 'TopicWriter.cpp:60-62' },
+        { id: 'S5_FWRITE_H', stage: 'stage5', type: 'action', title: 'fwrite(hdr, 1, 10, file_)', sub: 'Buffered 10B write in RAM', relX: 550, relY: 490, w: 240, h: 60, src: 'TopicWriter.cpp:64' },
+        { id: 'S5_FWRITE_D', stage: 'stage5', type: 'action', title: 'fwrite(payload, 1, len, file_)', sub: 'Buffered payload write in RAM', relX: 550, relY: 610, w: 240, h: 60, src: 'TopicWriter.cpp:65' },
+        { id: 'S5_D_WERR', stage: 'stage5', type: 'diamond', title: 'w_hdr==10 && w_data==len?', sub: 'Check Byte Count', relX: 550, relY: 730, w: 120, h: 70, src: 'TopicWriter.cpp:67' },
+        { id: 'S5_ERR_WRITE', stage: 'stage5', type: 'action', title: 'Write Failed Error', sub: 'return false', relX: 720, relY: 735, w: 160, h: 50, src: 'TopicWriter.cpp:68-69' },
+        { id: 'S5_STATS', stage: 'stage5', type: 'action', title: 'Update Metrics & Return True', sub: 'packet_count_++, bytes_written_ += (10+len)', relX: 550, relY: 860, w: 270, h: 64, src: 'TopicWriter.cpp:72-74' },
+        { id: 'S5_ROLL', stage: 'stage5', type: 'action', title: 'rollSegment() / close()', sub: 'fflush(file_), fclose(file_), file_ = nullptr', relX: 550, relY: 1000, w: 280, h: 64, src: 'TopicWriter.cpp:77-93' }
+      ],
+
+      // Internal & Inter-Stage Directed Edges
+      edges: [
+        // STAGE 1 EDGES
+        { from: 'S1_START', to: 'S1_D_RUN', type: 'main' },
+        { from: 'S1_D_RUN', to: 'S1_RET_ERR', type: 'no', label: 'YES (Already Run)' },
+        { from: 'S1_D_RUN', to: 'S1_TS', type: 'yes', label: 'NO (Fresh Launch)' },
+        { from: 'S1_TS', to: 'S1_DIR', type: 'main' },
+        { from: 'S1_DIR', to: 'S1_SPAWN_W', type: 'main', route: 'curved' },
+        { from: 'S1_SPAWN_W', to: 'S1_SPAWN_R', type: 'main' },
+        { from: 'S1_STOP', to: 'S1_WAIT', type: 'main' },
+        { from: 'S1_WAIT', to: 'S1_JOIN_R', type: 'main' },
+        { from: 'S1_JOIN_R', to: 'S1_JOIN_W', type: 'main' },
+
+        // STAGE 2 EDGES
+        { from: 'ep_zmq', to: 'DS1', type: 'main' },
+        { from: 'DS1', to: 'S2_INIT', type: 'main' },
+        { from: 'S2_INIT', to: 'S2_LOOP', type: 'main' },
+        { from: 'S2_LOOP', to: 'S2_D_DUR', type: 'main' },
+        { from: 'S2_D_DUR', to: 'S2_EXIT', type: 'yes', label: 'YES (Timeout)' },
+        { from: 'S2_D_DUR', to: 'S2_RECV_T', type: 'no', label: 'NO' },
+        { from: 'S2_RECV_T', to: 'S2_D_TO', type: 'main' },
+        { from: 'S2_D_TO', to: 'S2_LOOP', type: 'loop', label: 'YES (200ms Timeout)' },
+        { from: 'S2_D_TO', to: 'S2_TS', type: 'yes', label: 'NO (Data Available)' },
+        { from: 'S2_TS', to: 'S2_D_MORE', type: 'main' },
+        { from: 'S2_D_MORE', to: 'S2_INV_1', type: 'no', label: 'NO (!more)' },
+        { from: 'S2_INV_1', to: 'S2_LOOP', type: 'loop' },
+        { from: 'S2_D_MORE', to: 'S2_RECV_P', type: 'yes', label: 'YES' },
+        { from: 'S2_RECV_P', to: 'S2_D_VERIFY', type: 'main' },
+        { from: 'S2_D_VERIFY', to: 'S2_INV_2', type: 'no', label: 'NO (Bad SOP/EOP)' },
+        { from: 'S2_INV_2', to: 'S2_LOOP', type: 'loop' },
+        { from: 'S2_D_VERIFY', to: 'S2_PACK', type: 'yes', label: 'YES (Markers Valid)' },
+        { from: 'S2_PACK', to: 'S2_PUSH', type: 'main' },
+        { from: 'S2_PUSH', to: 'S2_LOOP', type: 'loop', label: 'Loop Next Pkt' },
+
+        // INTER-STAGE: STAGE 2 -> DATA STATE 2 -> STAGE 3
+        { from: 'S2_PUSH', to: 'DS2', type: 'main', interstage: true },
+        { from: 'DS2', to: 'S3_PUSH_ENTRY', type: 'main', interstage: true },
+
+        // STAGE 3 EDGES (Producer)
+        { from: 'S3_PUSH_ENTRY', to: 'S3_SZ', type: 'main' },
+        { from: 'S3_SZ', to: 'S3_LOCK_P', type: 'main' },
+        { from: 'S3_LOCK_P', to: 'S3_D_STOP', type: 'main' },
+        { from: 'S3_D_STOP', to: 'S3_RET_STOP', type: 'no', label: 'YES' },
+        { from: 'S3_D_STOP', to: 'S3_D_CAP', type: 'yes', label: 'NO' },
+        { from: 'S3_D_CAP', to: 'S3_DROP', type: 'no', label: 'YES (Overflow)' },
+        { from: 'S3_D_CAP', to: 'S3_ENQUEUE', type: 'yes', label: 'NO (Within 256MB)' },
+        { from: 'S3_ENQUEUE', to: 'S3_NOTIFY', type: 'main' },
+
+        // STAGE 3 EDGES (Consumer)
+        { from: 'S3_DRAIN_ENTRY', to: 'S3_LOCK_C', type: 'main' },
+        { from: 'S3_LOCK_C', to: 'S3_WAIT', type: 'main' },
+        { from: 'S3_WAIT', to: 'S3_D_EMPTY', type: 'main' },
+        { from: 'S3_D_EMPTY', to: 'S3_RET_EMPTY', type: 'no', label: 'NO (Empty)' },
+        { from: 'S3_D_EMPTY', to: 'S3_SWAP', type: 'yes', label: 'YES' },
+
+        // INTER-STAGE: STAGE 3 -> DATA STATE 3 -> STAGE 4
+        { from: 'S3_SWAP', to: 'DS3', type: 'main', interstage: true },
+        { from: 'DS3', to: 'S4_LOOP', type: 'main', interstage: true },
+
+        // STAGE 4 EDGES
+        { from: 'S4_LOOP', to: 'S4_DRAIN', type: 'main' },
+        { from: 'S4_DRAIN', to: 'S4_D_DRAINED', type: 'main' },
+        { from: 'S4_D_DRAINED', to: 'S4_D_EXIT', type: 'no', label: 'NO' },
+        { from: 'S4_D_DRAINED', to: 'S4_FOR_MSG', type: 'yes', label: 'YES' },
+        { from: 'S4_FOR_MSG', to: 'S4_SEG_CALC', type: 'main' },
+        { from: 'S4_SEG_CALC', to: 'S4_D_ROLL', type: 'main' },
+        { from: 'S4_D_ROLL', to: 'S4_ROLL_ALL', type: 'yes', label: 'YES (300s Roll)' },
+        { from: 'S4_D_ROLL', to: 'S4_D_TOPIC', type: 'no', label: 'NO' },
+        { from: 'S4_ROLL_ALL', to: 'S4_D_TOPIC', type: 'main' },
+        { from: 'S4_D_TOPIC', to: 'S4_MAKE_WRITER', type: 'yes', label: 'YES (New Topic)' },
+        { from: 'S4_D_TOPIC', to: 'S4_DISPATCH', type: 'no', label: 'NO' },
+        { from: 'S4_MAKE_WRITER', to: 'S4_DISPATCH', type: 'main' },
+        { from: 'S4_DISPATCH', to: 'S4_FOR_MSG', type: 'loop', label: 'Next Msg in Batch' },
+        { from: 'S4_D_EXIT', to: 'S4_CLOSE', type: 'yes', label: 'YES (All Flushed)' },
+        { from: 'S4_D_EXIT', to: 'S4_LOOP', type: 'loop', label: 'NO (Keep Draining)' },
+
+        // INTER-STAGE: STAGE 4 -> DATA STATE 4 -> STAGE 5
+        { from: 'S4_DISPATCH', to: 'DS4', type: 'main', interstage: true },
+        { from: 'DS4', to: 'S5_WM_ENTRY', type: 'main', interstage: true },
+
+        // STAGE 5 EDGES
+        { from: 'S5_WM_ENTRY', to: 'S5_ENSURE', type: 'main' },
+        { from: 'S5_ENSURE', to: 'S5_D_FILE', type: 'main' },
+        { from: 'S5_D_FILE', to: 'S5_D_SIZE', type: 'yes', label: 'YES (Already Open)' },
+        { from: 'S5_D_FILE', to: 'S5_LAZY_CREATE', type: 'no', label: 'NO (Open 128KB)' },
+        { from: 'S5_LAZY_CREATE', to: 'S5_D_SIZE', type: 'main' },
+        { from: 'S5_D_SIZE', to: 'S5_ERR_SIZE', type: 'no', label: 'YES (>65535)' },
+        { from: 'S5_D_SIZE', to: 'S5_SER_HDR', type: 'yes', label: 'NO' },
+        { from: 'S5_SER_HDR', to: 'S5_FWRITE_H', type: 'main' },
+        { from: 'S5_FWRITE_H', to: 'S5_FWRITE_D', type: 'main' },
+        { from: 'S5_FWRITE_D', to: 'S5_D_WERR', type: 'main' },
+        { from: 'S5_D_WERR', to: 'S5_ERR_WRITE', type: 'no', label: 'NO (IO Error)' },
+        { from: 'S5_D_WERR', to: 'S5_STATS', type: 'yes', label: 'YES' },
+        { from: 'S5_STATS', to: 'S5_ROLL', type: 'main', label: 'On Rollover' },
+
+        // INTER-STAGE: STAGE 5 -> DATA STATE 5 -> DISK STORAGE
+        { from: 'S5_STATS', to: 'DS5', type: 'main', interstage: true },
+        { from: 'DS5', to: 'ep_disk', type: 'main', interstage: true }
+      ]
+    };
+
+    // Node details mapping for slide-out drawer
+    const NODE_DETAILS_MAP = {
+      'S1_START': {
+        title: 'RecorderEngine::start() Entry Point',
+        tag: 'STAGE 1 • LIFECYCLE',
+        source: 'src/recorder/RecorderEngine.cpp:15',
+        explain: 'Main entry point to begin recording. Prepares atomic lifecycle state and initializes directories before starting background worker threads.',
+        code: `bool RecorderEngine::start() {
+    if (running_.exchange(true)) {
+        std::cerr << "[RecorderEngine] Already running." << std::endl;
+        return false;
+    }
+    // Proceed to timestamp & launch
+}`
+      },
+      'S1_D_RUN': {
+        title: 'Atomic Running Exchange Guard',
+        tag: 'STAGE 1 • CONCURRENCY GUARD',
+        source: 'src/recorder/RecorderEngine.cpp:16-19',
+        explain: 'Uses atomic exchange(true) to test and set the running flag in a single instruction. If the engine was already started, this prevents duplicate thread creation.',
+        code: `if (running_.exchange(true)) {
+    return false;
+}`
+      },
+      'S1_TS': {
+        title: 'Session Timestamp Acquisition',
+        tag: 'STAGE 1 • CLOCK INITIALIZATION',
+        source: 'src/recorder/RecorderEngine.cpp:26',
+        explain: 'Calls currentUtcMicroseconds() to set session_start_us_. This immutable timestamp acts as the baseline reference for all 300s segment calculations.',
+        code: `session_start_us_ = currentUtcMicroseconds();
+session_dir_ = config_.out_dir + "/" + formatSessionTimestamp(session_start_us_);
+zdata_dir_ = session_dir_ + "/zdata";`
+      },
+      'S1_DIR': {
+        title: 'Recursive Directory Creation',
+        tag: 'STAGE 1 • STORAGE PREPARATION',
+        source: 'src/recorder/RecorderEngine.cpp:27-29',
+        explain: 'Calls QDir().mkpath() on the base zdata directory to ensure the physical destination path exists before threads begin streaming.',
+        code: `QDir().mkpath(QString::fromStdString(zdata_dir_));`
+      },
+      'S1_SPAWN_W': {
+        title: 'Launch Writer Thread',
+        tag: 'STAGE 1 • WORKER THREAD',
+        source: 'src/recorder/RecorderEngine.cpp:43',
+        explain: 'Spawns writer_thread_ first to ensure the consumer loop is ready on the condition variable before network packets begin arriving.',
+        code: `writer_thread_ = std::thread(&RecorderEngine::writerLoop, this);`
+      },
+      'S1_SPAWN_R': {
+        title: 'Launch Receiver Thread',
+        tag: 'STAGE 1 • WORKER THREAD',
+        source: 'src/recorder/RecorderEngine.cpp:44',
+        explain: 'Spawns receiver_thread_ to establish the ZeroMQ connection and start ingesting telemetry messages.',
+        code: `receiver_thread_ = std::thread(&RecorderEngine::receiverLoop, this);`
+      },
+      'S1_STOP': {
+        title: 'RecorderEngine::stop() Trigger',
+        tag: 'STAGE 1 • SHUTDOWN SIGNAL',
+        source: 'src/recorder/RecorderEngine.cpp:49-55',
+        explain: 'Initiates non-blocking graceful shutdown by setting stop_requested_ = true and waking the consumer queue via queue_->requestStop().',
+        code: `void RecorderEngine::stop() {
+    if (!running_) return;
+    stop_requested_ = true;
+    if (queue_) {
+        queue_->requestStop();
+    }
+}`
+      },
+      'S1_WAIT': {
+        title: 'RecorderEngine::wait() Coordinator',
+        tag: 'STAGE 1 • THREAD COORDINATOR',
+        source: 'src/recorder/RecorderEngine.cpp:57',
+        explain: 'Blocks the caller until both worker threads have terminated cleanly in strict order.',
+        code: `void RecorderEngine::wait() {
+    if (receiver_thread_.joinable()) receiver_thread_.join();
+    if (writer_thread_.joinable()) writer_thread_.join();
+    running_ = false;
+}`
+      },
+      'S1_JOIN_R': {
+        title: 'Strict Order: Join Receiver First',
+        tag: 'STAGE 1 • JOIN ORDER',
+        source: 'src/recorder/RecorderEngine.cpp:58-60',
+        explain: 'The receiver thread is joined first. This guarantees that the producer is completely dead and zero new messages will be pushed before the writer flushes.',
+        code: `if (receiver_thread_.joinable()) {
+    receiver_thread_.join();
+}`
+      },
+      'S1_JOIN_W': {
+        title: 'Join Writer Second (Zero Packet Loss)',
+        tag: 'STAGE 1 • COMPLETE FLUSH',
+        source: 'src/recorder/RecorderEngine.cpp:61-64',
+        explain: 'The writer thread drains all remaining messages in BoundedByteQueue down to 0 bytes before exiting. Joining it second guarantees zero lost packets on exit.',
+        code: `if (writer_thread_.joinable()) {
+    writer_thread_.join();
+}
+running_ = false;`
+      },
+
+      // STAGE 2
+      'S2_INIT': {
+        title: 'ZMQ SUB Socket Initialization',
+        tag: 'STAGE 2 • NETWORKING',
+        source: 'src/recorder/RecorderEngine.cpp:68-78',
+        explain: 'Creates a 1-thread ZeroMQ context and SUB socket with 200ms rcvtimeo. Connects to tcp://192.168.5.21:30003 and subscribes to configured topics.',
+        code: `zmq::context_t ctx{1};
+zmq::socket_t sub_sock{ctx, zmq::socket_type::sub};
+sub_sock.set(zmq::sockopt::rcvtimeo, 200);
+sub_sock.connect(config_.sub_endpoint);
+for (const auto& topic : config_.topics) {
+    sub_sock.set(zmq::sockopt::subscribe, topic);
+}`
+      },
+      'S2_LOOP': {
+        title: 'Main Receiver Loop Header',
+        tag: 'STAGE 2 • INGESTION LOOP',
+        source: 'src/recorder/RecorderEngine.cpp:87',
+        explain: 'Loops continuously while !stop_requested_. Yields every 200ms when idle to check exit flag without spinning CPU.',
+        code: `while (!stop_requested_) {
+    // Check duration and receive multipart frames
+}`
+      },
+      'S2_D_DUR': {
+        title: 'Duration Limit Evaluation',
+        tag: 'STAGE 2 • TIME GUARD',
+        source: 'src/recorder/RecorderEngine.cpp:88-95',
+        explain: 'If duration_sec > 0, measures steady_clock elapsed seconds. If limit reached, invokes stop() and breaks out of the loop.',
+        code: `if (config_.duration_sec > 0) {
+    auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
+        std::chrono::steady_clock::now() - start_time).count();
+    if (elapsed >= config_.duration_sec) {
+        stop();
+        break;
+    }
+}`
+      },
+      'S2_RECV_T': {
+        title: 'Receive Frame 1: Topic String',
+        tag: 'STAGE 2 • MULTIPART INGESTION',
+        source: 'src/recorder/RecorderEngine.cpp:98-99',
+        explain: 'Pulls the first frame containing the topic string (e.g. "video").',
+        code: `zmq::message_t topic_msg;
+auto res = sub_sock.recv(topic_msg, zmq::recv_flags::none);`
+      },
+      'S2_D_TO': {
+        title: '200ms Timeout Decision',
+        tag: 'STAGE 2 • TIMEOUT BRANCH',
+        source: 'src/recorder/RecorderEngine.cpp:100-102',
+        explain: 'If no packet arrived within 200ms, recv() returns false. The thread loops back to evaluate the stop condition cleanly.',
+        code: `if (!res) {
+    continue; // 200ms timeout path
+}`
+      },
+      'S2_TS': {
+        title: 'Immediate Ingress Clock Capture',
+        tag: 'STAGE 2 • TIMESTAMPING',
+        source: 'src/recorder/RecorderEngine.cpp:104',
+        explain: 'Captures UTC microsecond timestamp immediately after Frame 1 arrival to minimize queuing and scheduling jitter.',
+        code: `uint64_t recv_ts = currentUtcMicroseconds();`
+      },
+      'S2_D_MORE': {
+        title: 'Multipart Continuation Verification',
+        tag: 'STAGE 2 • PROTOCOL GUARD',
+        source: 'src/recorder/RecorderEngine.cpp:106',
+        explain: 'Verifies topic_msg.more(). If false, packet is truncated; increments total_invalid_ and loops back.',
+        code: `if (!topic_msg.more()) {
+    total_invalid_++;
+    continue;
+}`
+      },
+      'S2_RECV_P': {
+        title: 'Receive Frame 2: Binary Payload',
+        tag: 'STAGE 2 • MULTIPART INGESTION',
+        source: 'src/recorder/RecorderEngine.cpp:111-116',
+        explain: 'Receives the binary RDP payload frame containing the telemetry data.',
+        code: `zmq::message_t payload_msg;
+auto res_payload = sub_sock.recv(payload_msg, zmq::recv_flags::none);
+const uint8_t* payload_ptr = static_cast<const uint8_t*>(payload_msg.data());
+size_t payload_len = payload_msg.size();`
+      },
+      'S2_D_VERIFY': {
+        title: 'RDP Framing Marker Verification',
+        tag: 'STAGE 2 • PROTOCOL VALIDATION',
+        source: 'src/recorder/RecorderEngine.cpp:121, src/common/EndianCodec.h:23',
+        explain: 'Validates that payload length >= 12, start-of-packet SOP == 0x0D0D, end-of-packet EOP == 0x0A0A, and internal length field matches payload length.',
+        code: `if (!verifyFrameMarkers(payload_ptr, payload_len, config_.use_big_endian)) {
+    total_invalid_++;
+    continue;
+}`
+      },
+      'S2_PACK': {
+        title: 'TelemetryMessage Construction',
+        tag: 'STAGE 2 • STRUCT PACKING',
+        source: 'src/recorder/RecorderEngine.cpp:126-129',
+        explain: 'Constructs the TelemetryMessage struct in heap, assigning topic string, receive timestamp, and copying payload vector.',
+        code: `TelemetryMessage msg;
+msg.topic = topic_msg.to_string();
+msg.timestamp_us = recv_ts;
+msg.payload.assign(payload_ptr, payload_ptr + payload_len);`
+      },
+      'S2_PUSH': {
+        title: 'Non-Blocking Queue Push',
+        tag: 'STAGE 2 • PRODUCER ENQUEUE',
+        source: 'src/recorder/RecorderEngine.cpp:131-132',
+        explain: 'Transfers ownership of msg into BoundedByteQueue via std::move and increments total_received_.',
+        code: `queue_->push(std::move(msg));
+total_received_++;`
+      },
+
+      // STAGE 3
+      'S3_PUSH_ENTRY': {
+        title: 'BoundedByteQueue::push() Entry',
+        tag: 'STAGE 3 • PRODUCER ENTRY',
+        source: 'src/recorder/BoundedByteQueue.h:21',
+        explain: 'Receives rvalue reference to TelemetryMessage. Never blocks the caller regardless of queue status.',
+        code: `bool push(TelemetryMessage &&msg) {
+    const size_t msg_size = msg.byteSize();
+    // lock and enqueue or drop
+}`
+      },
+      'S3_SZ': {
+        title: 'Dynamic Message Byte Size Calculation',
+        tag: 'STAGE 3 • CAPACITY ACCOUNTING',
+        source: 'src/recorder/BoundedByteQueue.h:22, src/common/Types.h:21',
+        explain: 'Calculates the memory footprint of the message before locking mutex: topic.size() + payload.size() + 32 (struct overhead).',
+        code: `const size_t msg_size = msg.byteSize();`
+      },
+      'S3_LOCK_P': {
+        title: 'Producer Mutex Lock',
+        tag: 'STAGE 3 • CONCURRENCY LOCK',
+        source: 'src/recorder/BoundedByteQueue.h:24',
+        explain: 'Acquires std::lock_guard<std::mutex> lock(mutex_) to protect queue_ deque and current_bytes_ counters.',
+        code: `std::lock_guard<std::mutex> lock(mutex_);`
+      },
+      'S3_D_CAP': {
+        title: '256 MB Capacity Guard',
+        tag: 'STAGE 3 • FLOW CONTROL',
+        source: 'src/recorder/BoundedByteQueue.h:29',
+        explain: 'Checks whether current_bytes_ + msg_size exceeds max_bytes_ (256 MB = 268,435,456 bytes). If full, branches to drop.',
+        code: `if (current_bytes_ + msg_size > max_bytes_) {
+    // Drop branch
+}`
+      },
+      'S3_DROP': {
+        title: 'Non-Blocking Drop Branch',
+        tag: 'STAGE 3 • DROPPED MESSAGE',
+        source: 'src/recorder/BoundedByteQueue.h:30-33',
+        explain: 'Increments dropped_messages_ and dropped_bytes_ atomically and returns false immediately, keeping the receiver thread moving.',
+        code: `dropped_messages_.fetch_add(1, std::memory_order_relaxed);
+dropped_bytes_.fetch_add(msg_size, std::memory_order_relaxed);
+return false;`
+      },
+      'S3_ENQUEUE': {
+        title: 'Deque Emplacement',
+        tag: 'STAGE 3 • BUFFER ENQUEUE',
+        source: 'src/recorder/BoundedByteQueue.h:35-37',
+        explain: 'Updates current_bytes_ and appends msg into queue_ deque via std::move.',
+        code: `current_bytes_ += msg_size;
+queue_.push_back(std::move(msg));
+pushed_messages_.fetch_add(1, std::memory_order_relaxed);`
+      },
+      'S3_NOTIFY': {
+        title: 'Signal Consumer (notify_one)',
+        tag: 'STAGE 3 • CONDITION VARIABLE',
+        source: 'src/recorder/BoundedByteQueue.h:39',
+        explain: 'Signals the consumer thread waiting on cv_. Called after releasing the mutex to minimize wake-and-block contention.',
+        code: `cv_.notify_one();
+return true;`
+      },
+      'S3_DRAIN_ENTRY': {
+        title: 'BoundedByteQueue::drain() Entry',
+        tag: 'STAGE 3 • CONSUMER ENTRY',
+        source: 'src/recorder/BoundedByteQueue.h:46-48',
+        explain: 'Consumer function called by writerLoop to drain batches of messages with a 50ms wait timeout.',
+        code: `bool drain(std::deque<TelemetryMessage> &dest,
+            std::chrono::milliseconds timeout = std::chrono::milliseconds(50)) {
+    dest.clear();`
+      },
+      'S3_WAIT': {
+        title: 'Timed Condition Variable Wait',
+        tag: 'STAGE 3 • CONSUMER WAIT',
+        source: 'src/recorder/BoundedByteQueue.h:50-55',
+        explain: 'Consumer sleeps on cv_.wait_for(50ms) until queue_ is not empty or stop_requested_ is signaled.',
+        code: `std::unique_lock<std::mutex> lock(mutex_);
+if (queue_.empty() && !stop_requested_.load(std::memory_order_acquire)) {
+    cv_.wait_for(lock, timeout, [this]() {
+        return !queue_.empty() || stop_requested_.load(std::memory_order_acquire);
+    });
+}`
+      },
+      'S3_SWAP': {
+        title: 'O(1) Batch std::swap Transfer',
+        tag: 'STAGE 3 • ZERO-COPY SWAP',
+        source: 'src/recorder/BoundedByteQueue.h:57-61',
+        explain: 'Transfers the entire deque to dest in O(1) time via std::swap under the lock and resets current_bytes_ = 0.',
+        code: `if (!queue_.empty()) {
+    std::swap(queue_, dest); // Pointer swap in ~15 ns
+    current_bytes_ = 0;
+    return true;
+}`
+      },
+
+      // STAGE 4
+      'S4_LOOP': {
+        title: 'Writer Loop Header',
+        tag: 'STAGE 4 • WRITER LOOP',
+        source: 'src/recorder/RecorderEngine.cpp:146',
+        explain: 'Infinite writer loop continuously pulling batches from BoundedByteQueue and routing to TopicWriter.',
+        code: `while (true) {
+    bool drained = queue_->drain(batch, std::chrono::milliseconds(50));
+    // iterate batch and write
+}`
+      },
+      'S4_FOR_MSG': {
+        title: 'Local Batch Iteration Loop',
+        tag: 'STAGE 4 • BATCH ITERATION',
+        source: 'src/recorder/RecorderEngine.cpp:149',
+        explain: 'Iterates through every message in the local batch deque outside of any queue locks.',
+        code: `for (const auto& msg : batch) {
+    // Process message
+}`
+      },
+      'S4_SEG_CALC': {
+        title: '300s Segment Math & Timestamp',
+        tag: 'STAGE 4 • SEGMENT MATH',
+        source: 'src/recorder/RecorderEngine.cpp:150-153',
+        explain: 'Calculates integer segment index seg_idx = (ts - start_ts) / 300000000ULL and seg_start_ts.',
+        code: `uint64_t seg_idx = (msg.timestamp_us >= session_start_us_)
+    ? ((msg.timestamp_us - session_start_us_) / segment_duration_us)
+    : 0;
+uint64_t seg_start_ts = session_start_us_ + seg_idx * segment_duration_us;`
+      },
+      'S4_D_ROLL': {
+        title: '300s Rollover Boundary Decision',
+        tag: 'STAGE 4 • ROLLOVER CHECK',
+        source: 'src/recorder/RecorderEngine.cpp:155',
+        explain: 'Checks if seg_idx != current_segment_idx. If true, triggers rollSegment() across all active topic writers.',
+        code: `if (seg_idx != current_segment_idx) {
+    for (auto& [_, writer] : writers_) {
+        writer->rollSegment(seg_start_ts);
+    }
+    current_segment_idx = seg_idx;
+}`
+      },
+      'S4_D_TOPIC': {
+        title: 'TopicWriter Map Lookup',
+        tag: 'STAGE 4 • LAZY ROUTER',
+        source: 'src/recorder/RecorderEngine.cpp:162-166',
+        explain: 'Finds writer for topic in std::map. If topic has never been seen, lazily creates std::make_unique<TopicWriter>.',
+        code: `auto it = writers_.find(msg.topic);
+if (it == writers_.end()) {
+    auto w = std::make_unique<TopicWriter>(zdata_dir_, msg.topic, config_.use_big_endian);
+    it = writers_.emplace(msg.topic, std::move(w)).first;
+}`
+      },
+      'S4_DISPATCH': {
+        title: 'Dispatch to TopicWriter::writeMessage()',
+        tag: 'STAGE 4 • FILE DISPATCH',
+        source: 'src/recorder/RecorderEngine.cpp:168',
+        explain: 'Dispatches the message to the appropriate TopicWriter to be buffered and written.',
+        code: `it->second->writeMessage(msg, seg_start_ts);`
+      },
+      'S4_D_EXIT': {
+        title: 'Zero-Loss Shutdown Verification',
+        tag: 'STAGE 4 • SAFE SHUTDOWN',
+        source: 'src/recorder/RecorderEngine.cpp:173-176',
+        explain: 'Breaks loop only when stop_requested_ && !drained && queue_->currentBytes() == 0, guaranteeing zero lost packets.',
+        code: `if (stop_requested_ && !drained && queue_->currentBytes() == 0) {
+    break; // Completely drained
+}`
+      },
+
+      // STAGE 5
+      'S5_WM_ENTRY': {
+        title: 'TopicWriter::writeMessage() Entry',
+        tag: 'STAGE 5 • TOPIC WRITER',
+        source: 'src/recorder/TopicWriter.cpp:50',
+        explain: 'Writes telemetry message into the active segment file for this topic.',
+        code: `bool TopicWriter::writeMessage(const TelemetryMessage& msg, uint64_t segment_start_ts) {`
+      },
+      'S5_ENSURE': {
+        title: 'Lazy File Check (ensureFileOpen)',
+        tag: 'STAGE 5 • LAZY FILE OPEN',
+        source: 'src/recorder/TopicWriter.cpp:23-48',
+        explain: 'If file_ != nullptr, returns immediately. If nullptr, creates topic directory, opens fopen("wb"), and attaches 128KB _IOFBF buffer.',
+        code: `bool TopicWriter::ensureFileOpen(uint64_t segment_start_ts) {
+    if (file_) return true; // Fast path for packets 2..N
+    QDir().mkpath(QString::fromStdString(topic_dir));
+    file_ = std::fopen(filepath.c_str(), "wb");
+    std::setvbuf(file_, io_buffer_.data(), _IOFBF, io_buffer_.size());
+    return true;
+}`
+      },
+      'S5_D_SIZE': {
+        title: 'UINT16_MAX (65535) Guard',
+        tag: 'STAGE 5 • LENGTH GUARD',
+        source: 'src/recorder/TopicWriter.cpp:55-58',
+        explain: 'Rejects payloads exceeding 65,535 bytes to prevent uint16_t length overflow in the 10-byte header.',
+        code: `if (msg.payload.size() > UINT16_MAX) {
+    return false;
+}`
+      },
+      'S5_SER_HDR': {
+        title: '10-Byte Zero-Padding Header Serialization',
+        tag: 'STAGE 5 • ENDIAN CODEC',
+        source: 'src/recorder/TopicWriter.cpp:60-62, src/common/EndianCodec.h:13-21',
+        explain: 'Packs uint64_t timestamp_us (8B) and uint16_t data_len (2B) into raw uint8_t hdr[10] array using QtEndian helpers, completely eliminating compiler struct padding.',
+        code: `uint8_t hdr[HEADER_SIZE]; // 10 bytes
+const auto payload_len = static_cast<uint16_t>(msg.payload.size());
+serializeHeader(msg.timestamp_us, payload_len, hdr, use_big_endian_);`
+      },
+      'S5_FWRITE_H': {
+        title: 'fwrite(hdr, 1, 10, file_)',
+        tag: 'STAGE 5 • BUFFERED WRITE',
+        source: 'src/recorder/TopicWriter.cpp:64',
+        explain: 'Writes 10-byte header into 128KB RAM buffer. Avoids OS write syscall until buffer fills or fflush is called.',
+        code: `size_t w_hdr = std::fwrite(hdr, 1, HEADER_SIZE, file_);`
+      },
+      'S5_FWRITE_D': {
+        title: 'fwrite(payload, 1, len, file_)',
+        tag: 'STAGE 5 • BUFFERED WRITE',
+        source: 'src/recorder/TopicWriter.cpp:65',
+        explain: 'Writes binary payload into 128KB RAM buffer directly following the header.',
+        code: `size_t w_data = std::fwrite(msg.payload.data(), 1, msg.payload.size(), file_);`
+      },
+      'S5_STATS': {
+        title: 'Verify Write & Update Statistics',
+        tag: 'STAGE 5 • METRICS UPDATE',
+        source: 'src/recorder/TopicWriter.cpp:67-74',
+        explain: 'Verifies bytes written match expected counts; increments packet_count_ and adds (10 + payload.size()) to bytes_written_.',
+        code: `packet_count_++;
+bytes_written_ += (HEADER_SIZE + msg.payload.size());
+return true;`
+      },
+      'S5_ROLL': {
+        title: 'Segment Rollover & Close Flush',
+        tag: 'STAGE 5 • FLUSH & CLOSE',
+        source: 'src/recorder/TopicWriter.cpp:77-93',
+        explain: 'Flushes remaining bytes from 128KB buffer via std::fflush(file_), closes file, and resets file_ = nullptr.',
+        code: `void TopicWriter::rollSegment(uint64_t new_segment_start_ts) {
+    if (file_) {
+        std::fflush(file_);
+        std::fclose(file_);
+        file_ = nullptr;
+    }
+    current_segment_start_ts_ = new_segment_start_ts;
+    // Maintain lazy creation: do NOT open file here!
+}`
+      }
+    };
+
+    // =========================================================================
+    // GRAPH RENDERING & DYNAMIC EXPANSION ENGINE
+    // =========================================================================
+    const worldG = document.getElementById('world');
+    const containersLayer = document.getElementById('containers-layer');
+    const edgesLayer = document.getElementById('edges-layer');
+    const nodesLayer = document.getElementById('nodes-layer');
+    const dataStatesLayer = document.getElementById('data-states-layer');
+
+    function getNodeCenter(nodeId) {
+      // Check data states
+      const ds = GRAPH_DATA.dataStates.find(d => d.id === nodeId);
+      if (ds) return { x: ds.x + ds.w / 2, y: ds.y + ds.h / 2 };
+
+      // Check endpoints
+      const ep = GRAPH_DATA.endpoints.find(e => e.id === nodeId);
+      if (ep) return { x: ep.x + ep.w / 2, y: ep.y + ep.h / 2 };
+
+      // Check micro nodes
+      const n = GRAPH_DATA.nodes.find(item => item.id === nodeId);
+      if (!n) return null;
+
+      const stage = GRAPH_DATA.stages.find(s => s.id === n.stage);
+      if (!stage) return null;
+
+      if (!stage.expanded) {
+        // When stage is collapsed, link connects to the collapsed stage box center/ports
+        return {
+          x: stage.collapsedBounds.x + stage.collapsedBounds.w / 2,
+          y: stage.collapsedBounds.y + stage.collapsedBounds.h / 2
+        };
+      }
+
+      return {
+        x: stage.bounds.x + n.relX + n.w / 2,
+        y: stage.bounds.y + n.relY + n.h / 2
+      };
+    }
+
+    function renderGraph() {
+      // 1. Render Containers
+      let containersHtml = '';
+      GRAPH_DATA.stages.forEach(s => {
+        const b = s.expanded ? s.bounds : s.collapsedBounds;
+        const toggleText = s.expanded ? '－ Collapse' : '＋ Expand';
+
+        containersHtml += `
+          <g id="box_${s.id}" class="subgraph-group">
+            <rect class="subgraph-box" x="${b.x}" y="${b.y}" width="${b.w}" height="${b.h}" />
+            
+            <!-- Header bar -->
+            <rect class="subgraph-header-bg" x="${b.x + 8}" y="${b.y + 8}" width="${b.w - 16}" height="44" />
+            <text class="subgraph-title" x="${b.x + 22}" y="${b.y + 35}">${s.title}</text>
+            <text class="subgraph-badge" x="${b.x + b.w - 140}" y="${b.y + 34}" fill="${s.badgeColor}">${s.thread}</text>
+
+            <!-- Toggle Button -->
+            <g class="subgraph-toggle-btn" onclick="toggleStage('${s.id}')">
+              <rect x="${b.x + b.w - 95}" y="${b.y + 16}" width="80" height="26" />
+              <text x="${b.x + b.w - 55}" y="${b.y + 29}">${toggleText}</text>
+            </g>
+        `;
+
+        if (!s.expanded) {
+          // Render collapsed summary content
+          containersHtml += `
+            <text x="${b.x + 22}" y="${b.y + 80}" font-family="var(--font-mono)" font-size="11" fill="var(--text-muted)">${s.subtitle}</text>
+            <text x="${b.x + 22}" y="${b.y + 105}" font-family="var(--font-sans)" font-size="11.5" fill="var(--text-faint)">Status: Collapsed Macro Node</text>
+          `;
+        }
+
+        containersHtml += '</g>';
+      });
+
+      // Render Endpoints
+      GRAPH_DATA.endpoints.forEach(ep => {
+        containersHtml += `
+          <g class="graph-node endpoint-node" onclick="showNodeDetail('${ep.id}')">
+            <rect class="node-rect" x="${ep.x}" y="${ep.y}" width="${ep.w}" height="${ep.h}" stroke="var(--cyan)" />
+            <text x="${ep.x + 14}" y="${ep.y + 26}" class="node-text-title">${ep.label}</text>
+            <text x="${ep.x + 14}" y="${ep.y + 46}" class="node-text-code">${ep.sub}</text>
+          </g>
+        `;
+      });
+      containersLayer.innerHTML = containersHtml;
+
+      // 2. Render Micro Nodes
+      let nodesHtml = '';
+      GRAPH_DATA.nodes.forEach(n => {
+        const stage = GRAPH_DATA.stages.find(s => s.id === n.stage);
+        if (!stage.expanded) return; // Hidden when collapsed
+
+        const absX = stage.bounds.x + n.relX;
+        const absY = stage.bounds.y + n.relY;
+
+        if (n.type === 'action') {
+          nodesHtml += `
+            <g class="graph-node node-action" id="node_${n.id}" onclick="showNodeDetail('${n.id}')">
+              <rect class="node-rect" x="${absX}" y="${absY}" width="${n.w}" height="${n.h}" />
+              <rect class="node-header-action" x="${absX + 6}" y="${absY + 6}" width="${n.w - 12}" height="22" />
+              <text class="node-text-title" x="${absX + 12}" y="${absY + 21}">${n.title}</text>
+              <text class="node-text-code" x="${absX + 12}" y="${absY + 44}">${n.sub}</text>
+            </g>
+          `;
+        } else if (n.type === 'diamond') {
+          const cx = absX + n.w / 2;
+          const cy = absY + n.h / 2;
+          const rx = n.w / 2;
+          const ry = n.h / 2;
+          const pts = `${cx},${cy - ry} ${cx + rx},${cy} ${cx},${cy + ry} ${cx - rx},${cy}`;
+          nodesHtml += `
+            <g class="graph-node node-diamond" id="node_${n.id}" onclick="showNodeDetail('${n.id}')">
+              <polygon class="diamond-polygon" points="${pts}" />
+              <text class="diamond-text" x="${cx}" y="${cy - 6}">${n.title}</text>
+              <text class="diamond-subtext" x="${cx}" y="${cy + 10}">${n.sub}</text>
+            </g>
+          `;
+        } else if (n.type === 'loop') {
+          nodesHtml += `
+            <g class="graph-node node-loop" id="node_${n.id}" onclick="showNodeDetail('${n.id}')">
+              <rect class="loop-rect" x="${absX}" y="${absY}" width="${n.w}" height="${n.h}" />
+              <text class="loop-text" x="${absX + n.w / 2}" y="${absY + n.h / 2}">⟳ ${n.title}</text>
+            </g>
+          `;
+        }
+      });
+      nodesLayer.innerHTML = nodesHtml;
+
+      // 3. Render Data Mutation Hexagonal Nodes
+      let dataHtml = '';
+      GRAPH_DATA.dataStates.forEach(ds => {
+        const cx = ds.x + ds.w / 2;
+        const cy = ds.y + ds.h / 2;
+        const rw = ds.w / 2;
+        const rh = ds.h / 2;
+        // Hexagonal cut points
+        const cut = 14;
+        const pts = `
+          ${ds.x + cut},${ds.y} 
+          ${ds.x + ds.w - cut},${ds.y} 
+          ${ds.x + ds.w},${cy} 
+          ${ds.x + ds.w - cut},${ds.y + ds.h} 
+          ${ds.x + cut},${ds.y + ds.h} 
+          ${ds.x},${cy}
+        `.replace(/\s+/g, ' ');
+
+        dataHtml += `
+          <g class="graph-node data-state-node" id="ds_${ds.id}" onclick="showNodeDetail('${ds.id}')">
+            <polygon points="${pts}" />
+            <text class="data-state-title" x="${cx}" y="${cy - 5}">${ds.title}</text>
+            <text class="data-state-desc" x="${cx}" y="${cy + 11}">${ds.desc}</text>
+          </g>
+        `;
+      });
+      dataStatesLayer.innerHTML = dataHtml;
+
+      // 4. Render Edges with Bezier Curves & Arrowheads
+      let edgesHtml = '';
+      GRAPH_DATA.edges.forEach(e => {
+        const fromPt = getNodeCenter(e.from);
+        const toPt = getNodeCenter(e.to);
+        if (!fromPt || !toPt) return;
+
+        // Determine if both nodes are visible or inside collapsed container
+        const fromNode = GRAPH_DATA.nodes.find(n => n.id === e.from);
+        const toNode = GRAPH_DATA.nodes.find(n => n.id === e.to);
+        const fromStage = fromNode ? GRAPH_DATA.stages.find(s => s.id === fromNode.stage) : null;
+        const toStage = toNode ? GRAPH_DATA.stages.find(s => s.id === toNode.stage) : null;
+
+        // Skip internal edge if stage is collapsed
+        if (fromStage && toStage && fromStage.id === toStage.id && !fromStage.expanded) {
+          return;
+        }
+
+        let marker = 'url(#arrow-default)';
+        let cls = 'arrow-path';
+        if (e.type === 'main') { marker = 'url(#arrow-main)'; cls += ' flow-main'; }
+        else if (e.type === 'yes') { marker = 'url(#arrow-yes)'; cls += ' branch-yes'; }
+        else if (e.type === 'no') { marker = 'url(#arrow-no)'; cls += ' branch-no'; }
+        else if (e.type === 'loop') { marker = 'url(#arrow-loop)'; cls += ' loop-back'; }
+
+        // Compute path string
+        let pathD = '';
+        const dx = toPt.x - fromPt.x;
+        const dy = toPt.y - fromPt.y;
+
+        if (e.type === 'loop') {
+          // Curved loop back path
+          const midX = Math.min(fromPt.x, toPt.x) - 130;
+          pathD = `M ${fromPt.x} ${fromPt.y} C ${midX} ${fromPt.y}, ${midX} ${toPt.y}, ${toPt.x} ${toPt.y}`;
+        } else if (Math.abs(dx) > Math.abs(dy)) {
+          // Horizontal flow curve
+          const cx1 = fromPt.x + dx * 0.45;
+          const cx2 = toPt.x - dx * 0.45;
+          pathD = `M ${fromPt.x} ${fromPt.y} C ${cx1} ${fromPt.y}, ${cx2} ${toPt.y}, ${toPt.x} ${toPt.y}`;
+        } else {
+          // Vertical flow curve
+          const cy1 = fromPt.y + dy * 0.45;
+          const cy2 = toPt.y - dy * 0.45;
+          pathD = `M ${fromPt.x} ${fromPt.y} C ${fromPt.x} ${cy1}, ${toPt.x} ${cy2}, ${toPt.x} ${toPt.y}`;
+        }
+
+        edgesHtml += `<path d="${pathD}" class="${cls}" marker-end="${marker}" />`;
+
+        // Add YES/NO branch labels
+        if (e.label) {
+          const midX = (fromPt.x + toPt.x) / 2;
+          const midY = (fromPt.y + toPt.y) / 2 - 8;
+          const labelCls = e.type === 'yes' ? 'branch-pill-yes' : (e.type === 'no' ? 'branch-pill-no' : '');
+          edgesHtml += `
+            <g class="${labelCls}">
+              <text x="${midX}" y="${midY}" text-anchor="middle">${e.label}</text>
+            </g>
+          `;
+        }
+      });
+      edgesLayer.innerHTML = edgesHtml;
+
+      // Update Mini-Map
+      updateMiniMap();
+    }
+
+    // Toggle container expansion
+    function toggleStage(stageId) {
+      const stage = GRAPH_DATA.stages.find(s => s.id === stageId);
+      if (stage) {
+        stage.expanded = !stage.expanded;
+        renderGraph();
+      }
+    }
+
+    // Expand All
+    document.getElementById('btnExpandAll').addEventListener('click', () => {
+      GRAPH_DATA.stages.forEach(s => s.expanded = true);
+      renderGraph();
+    });
+
+    // Collapse All
+    document.getElementById('btnCollapseAll').addEventListener('click', () => {
+      GRAPH_DATA.stages.forEach(s => s.expanded = false);
+      renderGraph();
+    });
+
+    // =========================================================================
+    // INFINITE CANVAS PAN & ZOOM ENGINE
+    // =========================================================================
+    let scale = 0.65;
+    let panX = 60;
+    let panY = 40;
+    let isPanning = false;
+    let startX = 0;
+    let startY = 0;
+
+    const container = document.getElementById('canvas-container');
+    const zoomLevelEl = document.getElementById('zoomLevel');
+
+    function applyTransform() {
+      scale = Math.min(Math.max(scale, 0.18), 3.0);
+      worldG.setAttribute('transform', `translate(${panX}, ${panY}) scale(${scale})`);
+      zoomLevelEl.textContent = Math.round(scale * 100) + '%';
+      updateMiniMap();
+    }
+
+    // Mouse Pan
+    container.addEventListener('pointerdown', (e) => {
+      if (e.target.closest('.hud-topbar, .hud-bottomright, .detail-drawer')) return;
+      isPanning = true;
+      startX = e.clientX - panX;
+      startY = e.clientY - panY;
+      container.classList.add('panning');
+    });
+
+    window.addEventListener('pointermove', (e) => {
+      if (!isPanning) return;
+      panX = e.clientX - startX;
+      panY = e.clientY - startY;
+      applyTransform();
+    });
+
+    window.addEventListener('pointerup', () => {
+      isPanning = false;
+      container.classList.remove('panning');
+    });
+
+    // Mouse Wheel Zoom centered at cursor
+    container.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      const zoomFactor = e.deltaY < 0 ? 1.15 : 0.87;
+      const mouseX = e.clientX;
+      const mouseY = e.clientY;
+
+      const worldX = (mouseX - panX) / scale;
+      const worldY = (mouseY - panY) / scale;
+
+      const newScale = Math.min(Math.max(scale * zoomFactor, 0.18), 3.0);
+      panX = mouseX - worldX * newScale;
+      panY = mouseY - worldY * newScale;
+      scale = newScale;
+
+      applyTransform();
+    }, { passive: false });
+
+    // HUD Zoom Buttons
+    document.getElementById('btnZoomIn').addEventListener('click', () => {
+      const cx = window.innerWidth / 2;
+      const cy = window.innerHeight / 2;
+      const wx = (cx - panX) / scale;
+      const wy = (cy - panY) / scale;
+      scale *= 1.25;
+      panX = cx - wx * scale;
+      panY = cy - wy * scale;
+      applyTransform();
+    });
+
+    document.getElementById('btnZoomOut').addEventListener('click', () => {
+      const cx = window.innerWidth / 2;
+      const cy = window.innerHeight / 2;
+      const wx = (cx - panX) / scale;
+      const wy = (cy - panY) / scale;
+      scale *= 0.8;
+      panX = cx - wx * scale;
+      panY = cy - wy * scale;
+      applyTransform();
+    });
+
+    // Fit to Screen
+    function fitToScreen() {
+      // Calculate bounding box of all stages
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      GRAPH_DATA.stages.forEach(s => {
+        const b = s.expanded ? s.bounds : s.collapsedBounds;
+        minX = Math.min(minX, b.x);
+        minY = Math.min(minY, b.y);
+        maxX = Math.max(maxX, b.x + b.w);
+        maxY = Math.max(maxY, b.y + b.h);
+      });
+      GRAPH_DATA.endpoints.forEach(ep => {
+        minX = Math.min(minX, ep.x);
+        minY = Math.min(minY, ep.y);
+        maxX = Math.max(maxX, ep.x + ep.w);
+        maxY = Math.max(maxY, ep.y + ep.h);
+      });
+
+      const pad = 80;
+      const graphW = (maxX - minX) + pad * 2;
+      const graphH = (maxY - minY) + pad * 2;
+
+      const winW = window.innerWidth;
+      const winH = window.innerHeight;
+
+      scale = Math.min(winW / graphW, winH / graphH, 1.2);
+      panX = (winW - (minX + maxX) * scale) / 2;
+      panY = (winH - (minY + maxY) * scale) / 2;
+      applyTransform();
+    }
+    document.getElementById('btnFit').addEventListener('click', fitToScreen);
+
+    // =========================================================================
+    // MINI-MAP ENGINE
+    // =========================================================================
+    const minimapCanvas = document.getElementById('minimap-canvas');
+    const miniCtx = minimapCanvas.getContext('2d');
+
+    function updateMiniMap() {
+      const mw = minimapCanvas.width;
+      const mh = minimapCanvas.height;
+      miniCtx.clearRect(0, 0, mw, mh);
+
+      // World bounds mapping (0,0 to 4600, 2400)
+      const worldW = 4600;
+      const worldH = 2400;
+      const mx = mw / worldW;
+      const my = mh / worldH;
+
+      // Draw background
+      miniCtx.fillStyle = '#080d19';
+      miniCtx.fillRect(0, 0, mw, mh);
+
+      // Draw Subgraphs
+      GRAPH_DATA.stages.forEach(s => {
+        const b = s.expanded ? s.bounds : s.collapsedBounds;
+        miniCtx.fillStyle = s.badgeColor + '33';
+        miniCtx.strokeStyle = s.badgeColor;
+        miniCtx.lineWidth = 1;
+        miniCtx.fillRect(b.x * mx, b.y * my, b.w * mx, b.h * my);
+        miniCtx.strokeRect(b.x * mx, b.y * my, b.w * mx, b.h * my);
+      });
+
+      // Draw Data State Nodes
+      GRAPH_DATA.dataStates.forEach(ds => {
+        miniCtx.fillStyle = '#38bdf8';
+        miniCtx.fillRect(ds.x * mx, ds.y * my, ds.w * mx, ds.h * my);
+      });
+
+      // Draw Visible Viewport Rectangle
+      const vx = (-panX / scale);
+      const vy = (-panY / scale);
+      const vw = (window.innerWidth / scale);
+      const vh = (window.innerHeight / scale);
+
+      miniCtx.strokeStyle = '#38bdf8';
+      miniCtx.lineWidth = 2;
+      miniCtx.fillStyle = 'rgba(56, 189, 248, 0.15)';
+      miniCtx.fillRect(vx * mx, vy * my, vw * mx, vh * my);
+      miniCtx.strokeRect(vx * mx, vy * my, vw * mx, vh * my);
+    }
+
+    // Mini-map click to pan
+    document.getElementById('minimapContainer').addEventListener('pointerdown', (e) => {
+      const rect = minimapCanvas.getBoundingClientRect();
+      const clickX = e.clientX - rect.left;
+      const clickY = e.clientY - rect.top;
+
+      const worldW = 4600;
+      const worldH = 2400;
+      const targetWX = (clickX / rect.width) * worldW;
+      const targetWY = (clickY / rect.height) * worldH;
+
+      panX = window.innerWidth / 2 - targetWX * scale;
+      panY = window.innerHeight / 2 - targetWY * scale;
+      applyTransform();
+    });
+
+    // =========================================================================
+    // SIDE DETAIL DRAWER LOGIC
+    // =========================================================================
+    const drawer = document.getElementById('detailDrawer');
+    const drawerScrim = document.getElementById('drawerScrim');
+    const drawerTag = document.getElementById('drawerTag');
+    const drawerTitle = document.getElementById('drawerTitle');
+    const drawerBody = document.getElementById('drawerBody');
+
+    function showNodeDetail(nodeId) {
+      // Find node detail
+      let data = NODE_DETAILS_MAP[nodeId];
+      if (!data) {
+        const ds = GRAPH_DATA.dataStates.find(d => d.id === nodeId);
+        if (ds) data = ds.detail;
+      }
+      if (!data) {
+        const ep = GRAPH_DATA.endpoints.find(e => e.id === nodeId);
+        if (ep) {
+          data = {
+            title: ep.label,
+            tag: 'ENDPOINT',
+            source: ep.sub,
+            explain: 'Network or disk storage endpoint.',
+            code: ep.sub
+          };
+        }
+      }
+      if (!data) return;
+
+      // Highlight selected node
+      document.querySelectorAll('.graph-node').forEach(el => el.classList.remove('selected'));
+      const activeEl = document.getElementById('node_' + nodeId) || document.getElementById('ds_' + nodeId);
+      if (activeEl) activeEl.classList.add('selected');
+
+      drawerTag.textContent = data.tag;
+      drawerTitle.textContent = data.title;
+      drawerBody.innerHTML = `
+        <div class="drawer-sec">
+          <h6>Architectural Function &amp; Purpose</h6>
+          <p>${data.explain}</p>
+        </div>
+        <div class="drawer-sec">
+          <h6>Source Code Reference</h6>
+          <span class="source-badge">📄 ${data.source}</span>
+        </div>
+        <div class="drawer-sec">
+          <h6>Implementation / Byte Layout Details</h6>
+          <pre class="code-snippet">${data.code}</pre>
+        </div>
+      `;
+
+      drawer.classList.add('open');
+      drawerScrim.classList.add('open');
+    }
+
+    function closeDrawer() {
+      drawer.classList.remove('open');
+      drawerScrim.classList.remove('open');
+      document.querySelectorAll('.graph-node').forEach(el => el.classList.remove('selected'));
+    }
+
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') closeDrawer();
+    });
+
+    // Initialize graph rendering
+    renderGraph();
+    fitToScreen();
+  </script>
+</body>
+</html>

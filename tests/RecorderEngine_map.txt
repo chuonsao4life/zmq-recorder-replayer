@@ -1,0 +1,78 @@
+================================================================
+ BẢN ĐỒ GIẢI PHẪU NHANH: ./src/recorder/RecorderEngine.cpp
+================================================================
+1. TỔNG SỐ DÒNG CODE:
+ 217 ./src/recorder/RecorderEngine.cpp
+  58 ./src/recorder/RecorderEngine.h
+ 275 total
+
+2. DANH SÁCH CÁC HÀM (METHODS) THEO THỨ TỰ DÒNG:
+
+3. CÁC ĐIỂM ĐỒNG BỘ ĐA LUỒNG (MUTEX / LOCK / ATOMIC / COND_VAR):
+./src/recorder/RecorderEngine.cpp:12:    , queue_(std::make_unique<BoundedByteQueue>(config_.max_queue_mb * 1024ULL * 1024ULL))
+./src/recorder/RecorderEngine.cpp:37:    std::cout << "  Max Queue MB : " << config_.max_queue_mb << " MB" << std::endl;
+./src/recorder/RecorderEngine.cpp:43:    writer_thread_ = std::thread(&RecorderEngine::writerLoop, this);
+./src/recorder/RecorderEngine.cpp:44:    receiver_thread_ = std::thread(&RecorderEngine::receiverLoop, this);
+./src/recorder/RecorderEngine.cpp:52:    if (queue_) {
+./src/recorder/RecorderEngine.cpp:53:        queue_->requestStop();
+./src/recorder/RecorderEngine.cpp:58:    if (receiver_thread_.joinable()) {
+./src/recorder/RecorderEngine.cpp:59:        receiver_thread_.join();
+./src/recorder/RecorderEngine.cpp:61:    if (writer_thread_.joinable()) {
+./src/recorder/RecorderEngine.cpp:62:        writer_thread_.join();
+./src/recorder/RecorderEngine.cpp:72:        sub_sock.set(zmq::sockopt::rcvtimeo, 200); // 200ms timeout for clean exit
+./src/recorder/RecorderEngine.cpp:85:    auto start_time = std::chrono::steady_clock::now();
+./src/recorder/RecorderEngine.cpp:90:                std::chrono::steady_clock::now() - start_time).count();
+./src/recorder/RecorderEngine.cpp:99:        auto res = sub_sock.recv(topic_msg, zmq::recv_flags::none);
+./src/recorder/RecorderEngine.cpp:101:            continue; // Timeout, check stop condition
+./src/recorder/RecorderEngine.cpp:104:        uint64_t recv_ts = currentUtcMicroseconds();
+./src/recorder/RecorderEngine.cpp:112:        auto res_payload = sub_sock.recv(payload_msg, zmq::recv_flags::none);
+./src/recorder/RecorderEngine.cpp:128:        msg.timestamp_us = recv_ts;
+./src/recorder/RecorderEngine.cpp:131:        queue_->push(std::move(msg));
+./src/recorder/RecorderEngine.cpp:147:        bool drained = queue_->drain(batch, std::chrono::milliseconds(50));
+./src/recorder/RecorderEngine.cpp:172:        // On stop: keep draining until the queue is truly empty so no messages are lost.
+./src/recorder/RecorderEngine.cpp:173:        if (stop_requested_ && !drained && queue_->currentBytes() == 0) {
+./src/recorder/RecorderEngine.cpp:192:    std::cout << "  Queue Dropped     : " << queue_->droppedMessages() << " pkts ("
+./src/recorder/RecorderEngine.cpp:193:              << (queue_->droppedBytes() / 1024.0 / 1024.0) << " MB)" << std::endl;
+./src/recorder/RecorderEngine.h:7:#include <thread>
+./src/recorder/RecorderEngine.h:8:#include <atomic>
+./src/recorder/RecorderEngine.h:19:    size_t max_queue_mb{256};
+./src/recorder/RecorderEngine.h:40:    std::unique_ptr<BoundedByteQueue> queue_;
+./src/recorder/RecorderEngine.h:42:    std::atomic<bool> running_{false};
+./src/recorder/RecorderEngine.h:43:    std::atomic<bool> stop_requested_{false};
+./src/recorder/RecorderEngine.h:45:    std::thread receiver_thread_;
+./src/recorder/RecorderEngine.h:46:    std::thread writer_thread_;
+./src/recorder/RecorderEngine.h:54:    std::atomic<uint64_t> total_received_{0};
+./src/recorder/RecorderEngine.h:55:    std::atomic<uint64_t> total_invalid_{0};
+
+4. CÁC ĐIỂM TƯƠNG TÁC ZMQ & FILE I/O:
+3:#include <zmq.hpp>
+43:    writer_thread_ = std::thread(&RecorderEngine::writerLoop, this);
+61:    if (writer_thread_.joinable()) {
+62:        writer_thread_.join();
+68:    zmq::context_t ctx{1};
+69:    zmq::socket_t sub_sock{ctx, zmq::socket_type::sub};
+72:        sub_sock.set(zmq::sockopt::rcvtimeo, 200); // 200ms timeout for clean exit
+76:            sub_sock.set(zmq::sockopt::subscribe, topic);
+98:        zmq::message_t topic_msg;
+99:        auto res = sub_sock.recv(topic_msg, zmq::recv_flags::none);
+104:        uint64_t recv_ts = currentUtcMicroseconds();
+111:        zmq::message_t payload_msg;
+112:        auto res_payload = sub_sock.recv(payload_msg, zmq::recv_flags::none);
+128:        msg.timestamp_us = recv_ts;
+135:    sub_sock.close();
+136:    ctx.close();
+140:void RecorderEngine::writerLoop() {
+156:                    for (auto& [_, writer] : writers_) {
+157:                        writer->rollSegment(seg_start_ts);
+162:                auto it = writers_.find(msg.topic);
+163:                if (it == writers_.end()) {
+165:                    it = writers_.emplace(msg.topic, std::move(w)).first;
+168:                it->second->writeMessage(msg, seg_start_ts);
+178:    for (auto& [_, writer] : writers_) {
+179:        writer->close();
+203:    for (const auto& [topic, writer] : writers_) {
+205:                  << std::setw(16) << writer->packetCount()
+206:                  << std::setw(16) << writer->bytesWritten() << std::endl;
+207:        grand_pkts += writer->packetCount();
+208:        grand_bytes += writer->bytesWritten();
+================================================================

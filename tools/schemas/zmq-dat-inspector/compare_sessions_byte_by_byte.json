@@ -1,0 +1,24 @@
+{
+  "name": "compare_sessions_byte_by_byte",
+  "description": "For each topic ('video', 'hit', 'ssr', 'adsb'), reads all <topic>/<topic>_*.dat files\nin chronological order from both sessions, strips the 8-byte time_stamp,\nand strictly compares [data_len u16] + [frame_RDP] packet-by-packet.\nReturns exact match status and counts per topic.",
+  "parameters": {
+    "additionalProperties": false,
+    "properties": {
+      "session1_zdata_dir": {
+        "type": "string"
+      },
+      "session2_zdata_dir": {
+        "type": "string"
+      },
+      "endian": {
+        "default": "little",
+        "type": "string"
+      }
+    },
+    "required": [
+      "session1_zdata_dir",
+      "session2_zdata_dir"
+    ],
+    "type": "object"
+  }
+}

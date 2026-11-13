@@ -1,0 +1,83 @@
+# ==============================================================================
+# C++ & Build Artifacts (CMake, Ninja, Object files, Binaries)
+# ==============================================================================
+build/
+my_rebuild/build/
+bin/
+lib/
+*.o
+*.obj
+*.a
+*.so
+*.dylib
+*.dll
+*.exe
+
+# CMake generated files
+CMakeCache.txt
+CMakeFiles/
+CMakeScripts/
+Testing/
+Makefile
+cmake_install.cmake
+install_manifest.txt
+compile_commands.json
+*.ninja
+.ninja_*
+CMakeUserPresets.json
+
+# Built executables in this project
+zmq_recorder_replay
+zmq_recorder_replay_bin
+zmq_bridge
+
+# ==============================================================================
+# Data & Recording Sessions (Binary .dat files, logs)
+# ==============================================================================
+my_test_session/
+zdata/
+*.dat
+*.rdata
+*.log
+*.dump
+
+# ==============================================================================
+# Python Runtime & Virtual Environments
+# ==============================================================================
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+ENV/
+
+# ==============================================================================
+# IDEs & Editor Configuration
+# ==============================================================================
+.vscode/
+.idea/
+*.user
+*.suo
+*.swp
+*.swo
+*~
+
+# ==============================================================================
+# OS Generated Files
+# ==============================================================================
+.DS_Store
+Thumbs.db
+
+# ==============================================================================
+# Local Agent & MCP Configs
+# ==============================================================================
+.agent/
+.agents/
+.archify/
+mcp_config.json
+*.browser-check.json
+*.delivery.json
+*.finalize.json
+*.finalize-summary.json
+

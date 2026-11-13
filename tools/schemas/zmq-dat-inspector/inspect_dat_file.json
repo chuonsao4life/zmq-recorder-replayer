@@ -1,0 +1,24 @@
+{
+  "name": "inspect_dat_file",
+  "description": "Reads binary .dat files with back-to-back layout [time_stamp: uint64 (8B)][data_len: uint16 (2B)][frame_RDP: data_len bytes].\nVerifies SOP == 0x0D0D and EOP == 0x0A0A, checks monotonic timestamps,\nand returns packet statistics and sample metadata.",
+  "parameters": {
+    "additionalProperties": false,
+    "properties": {
+      "file_path": {
+        "type": "string"
+      },
+      "endian": {
+        "default": "little",
+        "type": "string"
+      },
+      "max_packets": {
+        "default": 10,
+        "type": "integer"
+      }
+    },
+    "required": [
+      "file_path"
+    ],
+    "type": "object"
+  }
+}

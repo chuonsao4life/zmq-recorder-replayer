@@ -1,0 +1,26 @@
+{
+  "name": "publish_mock_zmq_stream",
+  "description": "Binds a zmq.PUB socket to bind_endpoint, sleeps 1.0s for subscribers to connect,\nand sends num_messages multipart messages [topic_bytes, frame_rdp] cycling across\nvideo (TYPE 0x01), hit (TYPE 0x02), ssr (TYPE 0x10), and adsb (TYPE 0xF1).\nEach frame_rdp follows:\nSOP(0x0D0D u16) | SEQ(u16) | SRC_ID(u8) | TYPE(u8) | LEN(u16) | DATA(LEN bytes) | CHKSUM(u16) | EOP(0x0A0A u16)",
+  "parameters": {
+    "additionalProperties": false,
+    "properties": {
+      "bind_endpoint": {
+        "default": "tcp://192.168.5.21:30003",
+        "type": "string"
+      },
+      "num_messages": {
+        "default": 2000,
+        "type": "integer"
+      },
+      "endian": {
+        "default": "little",
+        "type": "string"
+      },
+      "interval_us": {
+        "default": 200,
+        "type": "integer"
+      }
+    },
+    "type": "object"
+  }
+}
